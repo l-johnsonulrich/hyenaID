@@ -7,6 +7,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
 <title>Hyena ID</title>
 <style>
 :root{
@@ -141,6 +143,21 @@ button{background:none;border:0;cursor:pointer}
 .sect{margin:26px 0 12px;padding-top:18px;border-top:1px solid var(--line)}
 .sect:first-child{margin-top:6px;padding-top:0;border-top:0}
 
+#modal{position:fixed;inset:0;background:rgba(8,7,5,.8);display:none;align-items:flex-end;
+  z-index:97;backdrop-filter:blur(3px)}
+#modal.on{display:flex}
+#modal .sheet{width:100%;background:var(--ink-2);border-top:1px solid var(--line);
+  border-radius:16px 16px 0 0;padding:22px var(--pad) calc(var(--safe-b) + 22px)}
+.row.addclan{border-bottom:0;margin-top:6px}
+.row.addclan .label{color:var(--sharpie);font-weight:600}
+.cm{display:flex;align-items:center;gap:10px;padding:13px 2px;border-bottom:1px solid var(--line)}
+.cm .nm{flex:1;font-size:15px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cm.off .nm{color:var(--paper-dim)}
+.cm .ct{font-size:12px;color:var(--paper-dim);font-variant-numeric:tabular-nums}
+.cm button{font-size:13px;padding:8px 11px;border:1px solid var(--line);border-radius:7px;
+  color:var(--paper-dim);flex:0 0 auto}
+.cm button.kill{border-color:var(--alert);color:var(--alert)}
+.rm{color:var(--alert);font-size:12px;padding:6px 8px;margin:-6px -8px}
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--safe-b) + 26px);
   background:var(--paper);color:var(--ink);padding:11px 18px;border-radius:22px;font-size:14px;
   font-weight:550;opacity:0;transition:opacity .2s;pointer-events:none;z-index:99;max-width:88vw;
@@ -266,6 +283,10 @@ button{background:none;border:0;cursor:pointer}
       <div id="stats" class="mono" style="font-size:13px;line-height:1.9;color:var(--paper-dim)"></div>
     </div>
     <div class="sect">
+      <div class="eyebrow" style="margin-bottom:10px">Clans</div>
+      <div id="clanmgr"></div>
+    </div>
+    <div class="sect">
       <div class="eyebrow" style="margin-bottom:10px">Share with another device</div>
       <p class="hint" style="margin-top:0">Export writes one file holding every hyena and photo. Import adds them to whatever is already here; a hyena with the same name in the same folder is replaced.</p>
       <button class="btn ghost" id="btn-export">Export library file</button>
@@ -274,11 +295,24 @@ button{background:none;border:0;cursor:pointer}
     </div>
     <div class="sect">
       <div class="eyebrow" style="margin-bottom:10px">Reset</div>
+      <button class="btn ghost" id="btn-refresh">Reload the latest app version</button>
+      <p class="hint" style="margin-top:10px">Keeps every hyena and photo. Only replaces the app itself.</p>
       <button class="btn danger" id="btn-wipe">Erase everything on this device</button>
     </div>
   </div>
 </section>
 
+</div>
+<div id="modal">
+  <div class="sheet">
+    <div class="eyebrow" style="margin-bottom:12px">New clan</div>
+    <div class="field" style="margin-bottom:10px">
+      <input id="m-clan" placeholder="Clan name" autocapitalize="words">
+    </div>
+    <p class="hint" style="margin:0 0 14px">It gets the same five age–sex classes as every other clan.</p>
+    <button class="btn" id="m-ok">Add clan</button>
+    <button class="btn ghost" id="m-no">Cancel</button>
+  </div>
 </div>
 <div id="toast"></div>
 <div id="busy">working…</div>
@@ -286,19 +320,24 @@ button{background:none;border:0;cursor:pointer}
 <script>
 "use strict";
 
-const CLANS   = ["KCM North","KCM South","Talek West"];
+const BUILTIN = ["Talek West","KCM North","KCM South","Serena North","Serena South","Happy Zebra"];
+let extra = [], hidden = [];
+const ALLCLANS = () => [...BUILTIN, ...extra];
+const CLANS    = () => ALLCLANS().filter(c=>!hidden.includes(c));
 const CLASSES = ["Cubs","Subadults","Adult Females","Immigrant Males","Aliens"];
 const MAXPX = 1600, QUALITY = 0.82;
+const BUILD = "2026-07-19f";
 
 /* ---------------- storage ---------------- */
 let db;
 function open(){
   return new Promise((res,rej)=>{
-    const r = indexedDB.open("hyenaid",1);
+    const r = indexedDB.open("hyenaid",2);
     r.onupgradeneeded = e=>{
       const d = e.target.result;
-      d.createObjectStore("hyenas",{keyPath:"id"});
-      d.createObjectStore("photos",{keyPath:"id"});
+      if(!d.objectStoreNames.contains("hyenas")) d.createObjectStore("hyenas",{keyPath:"id"});
+      if(!d.objectStoreNames.contains("photos")) d.createObjectStore("photos",{keyPath:"id"});
+      if(!d.objectStoreNames.contains("meta"))   d.createObjectStore("meta",{keyPath:"k"});
     };
     r.onsuccess = e=>{db=e.target.result;res()};
     r.onerror = ()=>rej(r.error);
@@ -313,6 +352,11 @@ const putP = (id,blob)=>req(tx("photos","readwrite").put({id,blob}));
 const getP = id=>req(tx("photos","readonly").get(id));
 const delP = id=>req(tx("photos","readwrite").delete(id));
 const allP = ()=>req(tx("photos","readonly").getAll());
+const getM = k=>req(tx("meta","readonly").get(k));
+const putM = (k,v)=>req(tx("meta","readwrite").put({k,v}));
+async function saveExtra(){ extra=[...new Set(extra)]; await putM("clans",extra); }
+async function saveHidden(){ hidden=[...new Set(hidden)]; await putM("hidden",hidden); }
+const clanCount = c => hyenas.filter(h=>h.clan===c).length;
 
 /* ---------------- state ---------------- */
 let hyenas = [];
@@ -377,7 +421,7 @@ const chev = '<svg class="chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></s
 
 function renderClans(){
   const el = $("#clanlist"); el.innerHTML="";
-  CLANS.forEach(c=>{
+  CLANS().forEach(c=>{
     const n = hyenas.filter(h=>h.clan===c).length;
     const b = document.createElement("button");
     b.className = "row" + (n?"":" empty");
@@ -385,7 +429,13 @@ function renderClans(){
     b.onclick = ()=>{ cur.clan=c; renderClasses(); show("classes"); };
     el.appendChild(b);
   });
-  $("#libcount").textContent = hyenas.length ? hyenas.length+" hyenas on this device" : "No hyenas yet — pick a clan to start";
+  const add = document.createElement("button");
+  add.className="row addclan";
+  add.innerHTML = `<span class="label">+ Add a clan</span>`;
+  add.onclick = openNewClan;
+  el.appendChild(add);
+  const shown = hyenas.filter(h=>!hidden.includes(h.clan)).length;
+  $("#libcount").textContent = shown ? shown+" hyenas on this device" : "No hyenas yet — pick a clan to start";
 }
 
 function renderClasses(){
@@ -407,7 +457,9 @@ function renderClasses(){
 /* ---------------- browse ---------------- */
 function sortList(){
   cur.list = hyenas.filter(h=>h.clan===cur.clan && h.cls===cur.cls)
-                   .sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+                   .sort((a,b)=>(a.name||"").toUpperCase()
+                                 .localeCompare((b.name||"").toUpperCase(),
+                                                undefined,{numeric:true}));
 }
 function openBrowse(keepName){
   sortList();
@@ -499,13 +551,13 @@ addEventListener("keydown",e=>{
 
 /* ---------------- edit ---------------- */
 function fillSelects(){
-  $("#f-clan").innerHTML = CLANS.map(c=>`<option>${c}</option>`).join("");
+  $("#f-clan").innerHTML = CLANS().map(c=>`<option>${c}</option>`).join("");
   $("#f-class").innerHTML = CLASSES.map(c=>`<option>${c}</option>`).join("");
 }
 
 function openEdit(h){
   draft = h ? JSON.parse(JSON.stringify(h))
-            : {id:uid(), clan:cur.clan||CLANS[0], cls:cur.cls||CLASSES[0],
+            : {id:uid(), clan:cur.clan||CLANS()[0], cls:cur.cls||CLASSES[0],
                name:"",full:"",sex:"",dob:"",mom:"",ear:"",left:[],right:[]};
   draft._new = !h;
   $("#edittitle").textContent = h ? (h.name||"Edit hyena") : "New hyena";
@@ -621,16 +673,92 @@ $("#btn-del").onclick = async ()=>{
 };
 
 /* ---------------- settings ---------------- */
+function renderClanMgr(){
+  const el = $("#clanmgr"); el.innerHTML="";
+  ALLCLANS().forEach(c=>{
+    const n = clanCount(c), off = hidden.includes(c);
+    const d = document.createElement("div");
+    d.className = "cm" + (off?" off":"");
+    d.innerHTML = `<span class="nm">${esc(c)}</span><span class="ct">${n||"empty"}</span>`;
+    const b = document.createElement("button");
+    b.textContent = off ? "Show" : "Hide";
+    b.onclick = async ()=>{
+      hidden = off ? hidden.filter(x=>x!==c) : [...hidden,c];
+      await saveHidden(); fillSelects(); renderClanMgr(); renderClans();
+      toast(c + (off?" is back":" hidden"));
+    };
+    d.appendChild(b);
+    if(off){
+      const k = document.createElement("button");
+      k.className="kill"; k.textContent="Delete";
+      k.onclick = ()=>killClan(c,n);
+      d.appendChild(k);
+    }
+    el.appendChild(d);
+  });
+}
+
+async function killClan(c,n){
+  if(n>0){
+    const typed = prompt(
+      `This erases ${n} hyena${n>1?"s":""} in ${c} and every photo, on this device only.\n\n`+
+      `Export the library first if you want to keep them.\n\n`+
+      `Type the clan name to confirm:`);
+    if(!typed || typed.trim().toLowerCase()!==c.toLowerCase()){ toast("Not deleted"); return; }
+  }else if(!confirm(`Delete the empty clan ${c}?`)) return;
+  busy(true);
+  for(const h of hyenas.filter(x=>x.clan===c)){
+    for(const id of [...(h.left||[]),...(h.right||[])]){
+      await delP(id);
+      const u = urls.get(id); if(u){ URL.revokeObjectURL(u); urls.delete(id); }
+    }
+    await delH(h.id);
+  }
+  hyenas = await allH();
+  if(!BUILTIN.includes(c)){
+    extra = extra.filter(x=>x!==c);
+    hidden = hidden.filter(x=>x!==c);
+    await saveExtra();
+  }
+  await saveHidden();
+  fillSelects(); renderClanMgr(); renderClans();
+  busy(false);
+  toast(c+" deleted");
+}
+
+function openNewClan(){
+  $("#m-clan").value=""; $("#modal").classList.add("on");
+  setTimeout(()=>$("#m-clan").focus(),80);
+}
+$("#m-no").onclick = ()=>$("#modal").classList.remove("on");
+$("#modal").onclick = e=>{ if(e.target.id==="modal") $("#modal").classList.remove("on"); };
+$("#m-clan").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#m-ok").click(); });
+$("#m-ok").onclick = async ()=>{
+  const nm = $("#m-clan").value.trim();
+  if(!nm){ toast("Type a clan name first"); return; }
+  if(CLANS().some(c=>c.toLowerCase()===nm.toLowerCase())){ toast(nm+" already exists"); return; }
+  if(!ALLCLANS().some(c=>c.toLowerCase()===nm.toLowerCase())) {} 
+  if(hidden.some(c=>c.toLowerCase()===nm.toLowerCase())){
+    hidden = hidden.filter(c=>c.toLowerCase()!==nm.toLowerCase());
+    await saveHidden();
+  } else { extra.push(nm); await saveExtra(); }
+  $("#modal").classList.remove("on");
+  fillSelects(); renderClans();
+  toast(nm+" added");
+};
+
 $("#btn-settings").onclick = async ()=>{
   const ps = await allP();
   const bytes = ps.reduce((s,p)=>s+(p.blob.size||0),0);
   const mb = (bytes/1048576).toFixed(1);
-  const lines = CLANS.map(c=>{
+  const lines = CLANS().map(c=>{
     const n = hyenas.filter(h=>h.clan===c).length;
     return `${c.padEnd(12," ")} ${String(n).padStart(3," ")}`;
   });
   $("#stats").innerHTML = lines.join("<br>") +
-    `<br><br>${hyenas.length} hyenas · ${ps.length} photos · ${mb} MB`;
+    `<br><br>${hyenas.length} hyenas · ${ps.length} photos · ${mb} MB` +
+    `<br><span style="color:var(--sharpie)">build ${BUILD}</span>`;
+  renderClanMgr();
   show("settings");
 };
 
@@ -640,7 +768,7 @@ $("#btn-export").onclick = async ()=>{
     const ps = await allP();
     const photos = {};
     for(const p of ps) photos[p.id] = await blob2b64(p.blob);
-    const payload = {format:"hyena-id-1", exported:new Date().toISOString(), hyenas, photos};
+    const payload = {format:"hyena-id-1", exported:new Date().toISOString(), clans:extra, hidden, hyenas, photos};
     const b = new Blob([JSON.stringify(payload)],{type:"application/json"});
     const a = document.createElement("a");
     a.href = URL.createObjectURL(b);
@@ -659,6 +787,9 @@ $("#imp").onchange = async e=>{
   try{
     const data = JSON.parse(await f.text());
     if(data.format!=="hyena-id-1") throw new Error("wrong format");
+    for(const c of data.clans||[]) if(!ALLCLANS().includes(c)) extra.push(c);
+    for(const c of data.hidden||[]) if(!hidden.includes(c)) hidden.push(c);
+    await saveExtra(); await saveHidden(); fillSelects();
     for(const [id,b64] of Object.entries(data.photos||{})) await putP(id, b642blob(b64));
     const existing = await allH();
     let added=0, merged=0;
@@ -671,6 +802,8 @@ $("#imp").onchange = async e=>{
         h.right = [...new Set([...(dup.right||[]), ...(h.right||[])])];
         merged++;
       } else added++;
+      if(!ALLCLANS().includes(h.clan)){ extra.push(h.clan); await saveExtra(); }
+      if(hidden.includes(h.clan)){ hidden = hidden.filter(x=>x!==h.clan); await saveHidden(); }
       await putH(h);
     }
     hyenas = await allH();
@@ -681,10 +814,25 @@ $("#imp").onchange = async e=>{
   busy(false);
 };
 
+$("#btn-refresh").onclick = async ()=>{
+  busy(true);
+  try{
+    if("caches" in window){
+      for(const k of await caches.keys()) await caches.delete(k);
+    }
+    if(navigator.serviceWorker){
+      const rs = await navigator.serviceWorker.getRegistrations();
+      for(const r of rs) await r.unregister();
+    }
+  }catch(e){ console.error(e); }
+  location.reload(true);
+};
+
 $("#btn-wipe").onclick = async ()=>{
   if(!confirm("Erase every hyena and photo stored on this device? This cannot be undone.")) return;
   await req(tx("hyenas","readwrite").clear());
   await req(tx("photos","readwrite").clear());
+  await req(tx("meta","readwrite").clear()); extra=[]; hidden=[]; fillSelects();
   urls.forEach(u=>URL.revokeObjectURL(u)); urls.clear();
   hyenas = []; renderClans(); show("clans");
   toast("Erased");
@@ -711,7 +859,12 @@ function b642blob(d){
   fillSelects();
   try{
     await open();
+    const m = await getM("clans");
+    extra = (m && m.v) || [];
+    const mh = await getM("hidden");
+    hidden = (mh && mh.v) || [];
     hyenas = await allH();
+    fillSelects();
   }catch(e){
     toast("This browser blocked local storage");
     console.error(e);
