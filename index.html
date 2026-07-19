@@ -134,6 +134,9 @@ button{background:none;border:0;cursor:pointer}
 .addphoto{flex:0 0 auto;width:104px;height:78px;border-radius:7px;border:1px dashed var(--line);
   color:var(--paper-dim);display:grid;place-items:center;font-size:12px;text-align:center;line-height:1.3}
 
+.warn{margin-top:8px;padding:9px 11px;border-radius:7px;font-size:13px;line-height:1.45;
+  background:rgba(194,90,60,.14);border:1px solid var(--alert);color:var(--paper)}
+.warn button{color:var(--sharpie);text-decoration:underline;font-size:13px;padding:0}
 .hint{font-size:12px;color:var(--paper-dim);line-height:1.5;margin:-6px 0 16px}
 .sect{margin:26px 0 12px;padding-top:18px;border-top:1px solid var(--line)}
 .sect:first-child{margin-top:6px;padding-top:0;border-top:0}
@@ -217,16 +220,13 @@ button{background:none;border:0;cursor:pointer}
   </div>
   <div class="scroll">
     <div class="sect">
-      <div class="field"><label>Name</label><input id="f-name" autocapitalize="characters" placeholder="LING"></div>
+      <div class="field"><label>Name</label><input id="f-name" autocapitalize="characters" placeholder="LING"><div id="dupwarn"></div></div>
       <div class="field"><label>Full name</label><input id="f-full" placeholder="Ling Ling"></div>
       <div class="two">
-        <div class="field"><label>ID code</label><input id="f-code" class="mono" autocapitalize="characters" placeholder="lng"></div>
         <div class="field"><label>Sex</label><input id="f-sex" placeholder="unk"></div>
-      </div>
-      <div class="two">
         <div class="field"><label>Date of birth</label><input id="f-dob" placeholder="14 Mar 2024"></div>
-        <div class="field"><label>Mom</label><input id="f-mom" autocapitalize="characters" placeholder="MAMBA"></div>
       </div>
+      <div class="field"><label>Mom</label><input id="f-mom" autocapitalize="characters" placeholder="MAMBA"></div>
       <div class="field"><label>Ear damage &amp; notes</label><textarea id="f-ear" placeholder="missing front lip"></textarea></div>
       <p class="hint">Whatever you type here is exactly what shows on the photo. Nothing is checked or linked to the database.</p>
     </div>
@@ -432,7 +432,6 @@ function paint(){
   paintPane("#pane-r", h.right||[], "RIGHT");
 
   const bits = [];
-  if(h.code) bits.push(`<div><span class="k">ID</span><span class="mono">${esc(h.code)}</span></div>`);
   if(h.sex)  bits.push(`<div><span class="k">Sex</span>${esc(h.sex)}</div>`);
   if(h.dob)  bits.push(`<div><span class="k">DOB</span>${esc(h.dob)}</div>`);
   if(h.mom)  bits.push(`<div><span class="k">Mom</span>${esc(h.mom)}</div>`);
@@ -463,15 +462,17 @@ function angle(d){
 
 /* swipe */
 const stage = $("#stage");
-let sx=0, sy=0, moved=false, t0=0;
+let sx=0, sy=0, moved=false, t0=0, onHud=false;
 stage.addEventListener("touchstart",e=>{
   if(e.touches.length!==1) return;
+  onHud = !!(e.target.closest && e.target.closest("#hud"));
   sx=e.touches[0].clientX; sy=e.touches[0].clientY; moved=false; t0=Date.now();
 },{passive:true});
 stage.addEventListener("touchmove",e=>{
   if(Math.abs(e.touches[0].clientX-sx)>8||Math.abs(e.touches[0].clientY-sy)>8) moved=true;
 },{passive:true});
 stage.addEventListener("touchend",e=>{
+  if(onHud){ onHud=false; return; }
   const t=e.changedTouches[0], dx=t.clientX-sx, dy=t.clientY-sy;
   if(!moved && Date.now()-t0<400){ toggleCard(); return; }
   if(Math.abs(dy)>Math.abs(dx) && Math.abs(dy)>50) step(dy<0?1:-1);
@@ -505,16 +506,16 @@ function fillSelects(){
 function openEdit(h){
   draft = h ? JSON.parse(JSON.stringify(h))
             : {id:uid(), clan:cur.clan||CLANS[0], cls:cur.cls||CLASSES[0],
-               name:"",full:"",code:"",sex:"",dob:"",mom:"",ear:"",left:[],right:[]};
+               name:"",full:"",sex:"",dob:"",mom:"",ear:"",left:[],right:[]};
   draft._new = !h;
   $("#edittitle").textContent = h ? (h.name||"Edit hyena") : "New hyena";
   $("#f-name").value=draft.name; $("#f-full").value=draft.full;
-  $("#f-code").value=draft.code; $("#f-sex").value=draft.sex;
+  $("#f-sex").value=draft.sex;
   $("#f-dob").value=draft.dob;   $("#f-mom").value=draft.mom;
   $("#f-ear").value=draft.ear;
   $("#f-clan").value=draft.clan; $("#f-class").value=draft.cls;
   $("#btn-del").style.display = h ? "block" : "none";
-  shelves(); show("edit");
+  $("#dupwarn").innerHTML=""; shelves(); show("edit");
 }
 
 async function shelves(){
@@ -564,6 +565,23 @@ $("#picker").onchange = async e=>{
   busy(false);
 };
 
+$("#f-name").addEventListener("input",checkDup);
+$("#f-clan").addEventListener("change",checkDup);
+function checkDup(){
+  const w = $("#dupwarn"); if(!draft) return;
+  const nm = $("#f-name").value.trim().toUpperCase();
+  const cl = $("#f-clan").value;
+  const hit = nm && hyenas.find(h=>h.id!==draft.id && h.clan===cl &&
+                                   (h.name||"").toUpperCase()===nm);
+  if(!hit){ w.innerHTML=""; return; }
+  w.innerHTML = `<div class="warn">${esc(hit.name)} already exists in ${esc(hit.clan)} `
+    + `&middot; ${esc(hit.cls)}. <button type="button" id="gotodup">Open that one instead</button></div>`;
+  $("#gotodup").onclick = ()=>{
+    cur.clan=hit.clan; cur.cls=hit.cls; draft=null;
+    sortList(); openBrowse(hit.name);
+  };
+}
+
 $("#btn-new").onclick = ()=>openEdit(null);
 $("#btn-edit").onclick = ()=>openEdit(cur.list[cur.i]);
 $("#btn-cancel").onclick = ()=>{
@@ -575,7 +593,6 @@ $("#btn-cancel").onclick = ()=>{
 $("#btn-save").onclick = async ()=>{
   draft.name  = $("#f-name").value.trim();
   draft.full  = $("#f-full").value.trim();
-  draft.code  = $("#f-code").value.trim();
   draft.sex   = $("#f-sex").value.trim();
   draft.dob   = $("#f-dob").value.trim();
   draft.mom   = $("#f-mom").value.trim();
@@ -644,16 +661,21 @@ $("#imp").onchange = async e=>{
     if(data.format!=="hyena-id-1") throw new Error("wrong format");
     for(const [id,b64] of Object.entries(data.photos||{})) await putP(id, b642blob(b64));
     const existing = await allH();
-    let added=0, replaced=0;
+    let added=0, merged=0;
     for(const h of data.hyenas||[]){
-      const dup = existing.find(x=>x.clan===h.clan && x.cls===h.cls &&
+      const dup = existing.find(x=>x.clan===h.clan &&
                                    (x.name||"").toUpperCase()===(h.name||"").toUpperCase());
-      if(dup){ h.id = dup.id; replaced++; } else added++;
+      if(dup){
+        h.id = dup.id;
+        h.left  = [...new Set([...(dup.left ||[]), ...(h.left ||[])])];
+        h.right = [...new Set([...(dup.right||[]), ...(h.right||[])])];
+        merged++;
+      } else added++;
       await putH(h);
     }
     hyenas = await allH();
     renderClans();
-    toast(added+" added, "+replaced+" replaced");
+    toast(added+" added, "+merged+" updated");
     show("clans");
   }catch(err){ toast("That file is not a hyena library"); console.error(err); }
   busy(false);
