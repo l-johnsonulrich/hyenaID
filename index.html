@@ -143,6 +143,17 @@ button{background:none;border:0;cursor:pointer}
 .sect{margin:26px 0 12px;padding-top:18px;border-top:1px solid var(--line)}
 .sect:first-child{margin-top:6px;padding-top:0;border-top:0}
 
+#zoom{position:fixed;inset:0;background:#000;display:none;z-index:96;
+  overflow:hidden;touch-action:none}
+#zoom.on{display:block}
+#zimg{position:absolute;top:50%;left:50%;max-width:100%;max-height:100%;
+  transform-origin:center center;will-change:transform;user-select:none;
+  -webkit-user-drag:none;pointer-events:none}
+#zclose{position:absolute;top:calc(var(--safe-t) + 8px);right:8px;
+  background:rgba(255,255,255,.14);color:#fff;backdrop-filter:blur(6px);z-index:2}
+#zlabel{position:absolute;top:calc(var(--safe-t) + 20px);left:16px;font-size:12px;
+  letter-spacing:.14em;color:rgba(255,255,255,.75);text-shadow:0 1px 4px #000;
+  pointer-events:none}
 #modal{position:fixed;inset:0;background:rgba(8,7,5,.8);display:none;align-items:flex-end;
   z-index:97;backdrop-filter:blur(3px)}
 #modal.on{display:flex}
@@ -215,6 +226,10 @@ button{background:none;border:0;cursor:pointer}
         <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
       <div class="pos" id="pos"></div>
+      <button class="iconbtn" id="btn-eye" aria-label="Show or hide the text">
+        <svg viewBox="0 0 24 24" id="eye-on"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        <svg viewBox="0 0 24 24" id="eye-off" style="display:none"><path d="M17.9 17.9A10.4 10.4 0 0 1 12 20C5 20 1 12 1 12a19 19 0 0 1 5.1-5.9M9.9 4.2A10.9 10.9 0 0 1 12 4c7 0 11 8 11 8a19 19 0 0 1-2.2 3.2M1 1l22 22"/></svg>
+      </button>
       <button class="iconbtn" id="btn-edit" aria-label="Edit this hyena">
         <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
       </button>
@@ -303,6 +318,13 @@ button{background:none;border:0;cursor:pointer}
 </section>
 
 </div>
+<div id="zoom">
+  <img id="zimg" alt="">
+  <button class="iconbtn" id="zclose" aria-label="Close">
+    <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+  </button>
+  <div id="zlabel"></div>
+</div>
 <div id="modal">
   <div class="sheet">
     <div class="eyebrow" style="margin-bottom:12px">New clan</div>
@@ -326,7 +348,7 @@ const ALLCLANS = () => [...BUILTIN, ...extra];
 const CLANS    = () => ALLCLANS().filter(c=>!hidden.includes(c));
 const CLASSES = ["Cubs","Subadults","Adult Females","Immigrant Males","Aliens"];
 const MAXPX = 1600, QUALITY = 0.82;
-const BUILD = "2026-07-19f";
+const BUILD = "2026-07-19g";
 
 /* ---------------- storage ---------------- */
 let db;
@@ -526,20 +548,108 @@ stage.addEventListener("touchmove",e=>{
 stage.addEventListener("touchend",e=>{
   if(onHud){ onHud=false; return; }
   const t=e.changedTouches[0], dx=t.clientX-sx, dy=t.clientY-sy;
-  if(!moved && Date.now()-t0<400){ toggleCard(); return; }
+  if(!moved && Date.now()-t0<400){ tapPane(e.target); return; }
   if(Math.abs(dy)>Math.abs(dx) && Math.abs(dy)>50) step(dy<0?1:-1);
   else if(Math.abs(dx)>50) angle(dx<0?1:-1);
 },{passive:true});
 stage.addEventListener("click",e=>{
   if(e.target.closest("#hud")) return;
-  if(!("ontouchstart" in window)) toggleCard();
+  if(!("ontouchstart" in window)) tapPane(e.target);
 });
+
+function tapPane(target){
+  const p = target.closest && target.closest(".pane");
+  if(!p) return;
+  const img = p.querySelector("img");
+  if(!img) return;
+  openZoom(img.src, p.classList.contains("top") ? "LEFT" : "RIGHT");
+}
 function toggleCard(){
   cardOn=!cardOn;
   $("#card").classList.toggle("hidden",!cardOn);
-  $("#hud").classList.toggle("hidden",!cardOn);
+  $("#eye-on").style.display  = cardOn ? "" : "none";
+  $("#eye-off").style.display = cardOn ? "none" : "";
 }
+$("#btn-eye").onclick = e=>{ e.stopPropagation(); toggleCard(); };
+/* ---------------- zoom viewer ---------------- */
+const zoom=$("#zoom"), zimg=$("#zimg");
+let zs=1, zx=0, zy=0, zBase=1, zDist=0, zPan=false, zpx=0, zpy=0, zTap=0;
+const MINZ=1, MAXZ=6;
+
+function zApply(){
+  zimg.style.transform = `translate(-50%,-50%) translate(${zx}px,${zy}px) scale(${zs})`;
+}
+function zClamp(){
+  if(zs<=1){ zx=0; zy=0; return; }
+  const r=zimg.getBoundingClientRect();
+  const ow=Math.max(0,(r.width -innerWidth )/2), oh=Math.max(0,(r.height-innerHeight)/2);
+  zx=Math.max(-ow,Math.min(ow,zx)); zy=Math.max(-oh,Math.min(oh,zy));
+}
+function openZoom(src,side){
+  zimg.src=src; $("#zlabel").textContent=side;
+  zs=1; zx=0; zy=0; zApply();
+  zoom.classList.add("on");
+}
+function closeZoom(){ zoom.classList.remove("on"); zimg.src=""; }
+$("#zclose").onclick = e=>{ e.stopPropagation(); closeZoom(); };
+
+zoom.addEventListener("touchstart",e=>{
+  if(e.target.closest("#zclose")) return;
+  if(e.touches.length===2){
+    const [a,b]=e.touches;
+    zDist=Math.hypot(b.clientX-a.clientX,b.clientY-a.clientY);
+    zBase=zs; zPan=false;
+  }else if(e.touches.length===1){
+    zPan=true; zpx=e.touches[0].clientX-zx; zpy=e.touches[0].clientY-zy;
+    const now=Date.now();
+    if(now-zTap<300){
+      zs = zs>1.2 ? 1 : 2.5; zx=0; zy=0; zClamp(); zApply(); zTap=0;
+    } else zTap=now;
+  }
+},{passive:true});
+
+zoom.addEventListener("touchmove",e=>{
+  if(e.touches.length===2){
+    const [a,b]=e.touches;
+    const d=Math.hypot(b.clientX-a.clientX,b.clientY-a.clientY);
+    if(zDist>0){ zs=Math.max(MINZ,Math.min(MAXZ,zBase*(d/zDist))); zClamp(); zApply(); }
+    e.preventDefault();
+  }else if(zPan && zs>1 && e.touches.length===1){
+    zx=e.touches[0].clientX-zpx; zy=e.touches[0].clientY-zpy;
+    zClamp(); zApply(); e.preventDefault();
+  }
+},{passive:false});
+
+zoom.addEventListener("touchend",e=>{
+  if(e.touches.length===0){ zPan=false; if(zs<1.05){ zs=1; zx=0; zy=0; zApply(); } }
+},{passive:true});
+
+zoom.addEventListener("wheel",e=>{
+  e.preventDefault();
+  zs=Math.max(MINZ,Math.min(MAXZ, zs * (e.deltaY<0?1.12:0.89)));
+  zClamp(); zApply();
+},{passive:false});
+
+let zdrag=false;
+zoom.addEventListener("mousedown",e=>{
+  if(e.target.closest("#zclose")) return;
+  zdrag=true; zpx=e.clientX-zx; zpy=e.clientY-zy;
+});
+addEventListener("mousemove",e=>{
+  if(!zdrag||zs<=1) return;
+  zx=e.clientX-zpx; zy=e.clientY-zpy; zClamp(); zApply();
+});
+addEventListener("mouseup",()=>zdrag=false);
+zoom.addEventListener("dblclick",e=>{
+  if(e.target.closest("#zclose")) return;
+  zs = zs>1.2 ? 1 : 2.5; zx=0; zy=0; zClamp(); zApply();
+});
+
 addEventListener("keydown",e=>{
+  if(zoom.classList.contains("on")){
+    if(e.key==="Escape"){ e.stopPropagation(); closeZoom(); }
+    return;
+  }
   if(!$("#s-browse").classList.contains("on")) return;
   if(e.key==="ArrowDown") step(1);
   else if(e.key==="ArrowUp") step(-1);
