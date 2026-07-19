@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#14120f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<title>Hyena ID</title>
+<style>
+:root{
+  --ink:#14120f;
+  --ink-2:#1f1c17;
+  --ink-3:#2b2721;
+  --line:#3d372e;
+  --paper:#efe9dc;
+  --paper-dim:#a49b8a;
+  --sharpie:#e8b23a;
+  --alert:#c25a3c;
+  --pad:16px;
+  --safe-t:env(safe-area-inset-top,0px);
+  --safe-b:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--ink);color:var(--paper);
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  overscroll-behavior:none}
+button,input,select,textarea{font:inherit;color:inherit}
+button{background:none;border:0;cursor:pointer}
+
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-variant-ligatures:none;letter-spacing:.02em}
+.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.16em;color:var(--paper-dim)}
+
+#app{height:100%;display:flex;flex-direction:column}
+.screen{position:absolute;inset:0;display:none;flex-direction:column}
+.screen.on{display:flex}
+
+/* ---------- top bar ---------- */
+.bar{display:flex;align-items:center;gap:12px;padding:calc(var(--safe-t) + 12px) var(--pad) 12px;
+  border-bottom:1px solid var(--line);flex:0 0 auto;background:var(--ink)}
+.bar h1{margin:0;font-size:17px;font-weight:650;letter-spacing:-.01em;flex:1;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar .sub{font-size:12px;color:var(--paper-dim);font-weight:400}
+.iconbtn{width:44px;height:44px;display:grid;place-items:center;border-radius:10px;
+  color:var(--paper-dim);flex:0 0 auto}
+.iconbtn:active{background:var(--ink-3);color:var(--paper)}
+.iconbtn svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;
+  stroke-linecap:round;stroke-linejoin:round}
+
+.scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  padding:8px var(--pad) calc(var(--safe-b) + 28px)}
+
+/* ---------- list rows ---------- */
+.row{display:flex;align-items:center;gap:14px;width:100%;text-align:left;
+  padding:18px 14px;border-bottom:1px solid var(--line)}
+.row:active{background:var(--ink-2)}
+.row .label{flex:1;font-size:17px;font-weight:550}
+.row .count{font-size:13px;color:var(--paper-dim);font-variant-numeric:tabular-nums}
+.row .chev{width:18px;height:18px;stroke:var(--line);fill:none;stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round}
+.row.empty .label{color:var(--paper-dim);font-weight:400}
+
+.tag{display:inline-block;padding:2px 7px;border:1px solid var(--line);border-radius:4px;
+  font-size:11px;color:var(--paper-dim)}
+
+/* ---------- browse stage ---------- */
+#stage{position:relative;flex:1;overflow:hidden;background:#000;touch-action:none}
+.pane{position:absolute;left:0;right:0;height:50%;overflow:hidden;background:#000}
+.pane.top{top:0}
+.pane.bot{top:50%;border-top:1px solid rgba(255,255,255,.14)}
+.pane img{width:100%;height:100%;object-fit:contain;display:block}
+.pane .side{position:absolute;top:8px;left:10px;font-size:10px;letter-spacing:.18em;
+  color:rgba(255,255,255,.55);text-shadow:0 1px 3px #000;pointer-events:none}
+.pane .none{position:absolute;inset:0;display:grid;place-items:center;
+  color:#5a5348;font-size:13px;letter-spacing:.08em}
+
+/* the field card: signature element */
+#card{position:absolute;left:0;right:0;bottom:0;padding:14px var(--pad) calc(var(--safe-b) + 14px);
+  background:linear-gradient(to top,rgba(10,9,7,.94) 55%,rgba(10,9,7,0));
+  pointer-events:none;transition:opacity .18s}
+#card.hidden{opacity:0}
+#card .nm{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1.05;
+  color:var(--sharpie)}
+#card .full{font-size:13px;color:var(--paper);opacity:.8;margin-top:2px}
+#card .grid{display:flex;flex-wrap:wrap;gap:4px 18px;margin-top:9px;font-size:13px}
+#card .grid div{white-space:nowrap}
+#card .k{color:var(--paper-dim);font-size:10px;text-transform:uppercase;
+  letter-spacing:.13em;margin-right:5px}
+#card .ear{margin-top:7px;font-size:13px;color:var(--paper);
+  border-left:2px solid var(--sharpie);padding-left:9px;white-space:pre-wrap}
+
+#hud{position:absolute;top:calc(var(--safe-t) + 8px);left:0;right:0;
+  display:flex;align-items:center;gap:6px;padding:0 8px;transition:opacity .18s}
+#hud.hidden{opacity:0;pointer-events:none}
+#hud .iconbtn{background:rgba(10,9,7,.6);color:var(--paper);backdrop-filter:blur(6px)}
+#hud .pos{flex:1;text-align:center;font-size:12px;color:rgba(255,255,255,.8);
+  text-shadow:0 1px 3px #000;font-variant-numeric:tabular-nums;letter-spacing:.05em}
+#dots{position:absolute;bottom:calc(var(--safe-b) + 4px);left:0;right:0;
+  display:flex;justify-content:center;gap:5px;pointer-events:none}
+#dots i{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.3)}
+#dots i.on{background:var(--sharpie)}
+
+/* ---------- forms ---------- */
+.field{margin-bottom:16px}
+.field label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.14em;
+  color:var(--paper-dim);margin-bottom:6px}
+.field input,.field select,.field textarea{width:100%;background:var(--ink-2);
+  border:1px solid var(--line);border-radius:8px;padding:13px 12px;font-size:16px;
+  outline:none;-webkit-appearance:none;appearance:none}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--sharpie)}
+.field textarea{min-height:76px;resize:vertical}
+.field select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a49b8a' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 12px center;background-size:18px;
+  padding-right:40px}
+.two{display:flex;gap:12px}
+.two>*{flex:1;min-width:0}
+
+.btn{display:block;width:100%;padding:15px;border-radius:9px;font-size:16px;font-weight:600;
+  text-align:center;background:var(--sharpie);color:#191408;margin-top:8px}
+.btn:active{filter:brightness(.9)}
+.btn.ghost{background:none;border:1px solid var(--line);color:var(--paper);font-weight:500}
+.btn.danger{background:none;border:1px solid var(--alert);color:var(--alert);font-weight:500}
+
+.shelf{display:flex;gap:10px;overflow-x:auto;padding:4px 0 10px;-webkit-overflow-scrolling:touch}
+.thumb{position:relative;flex:0 0 auto;width:104px;height:78px;border-radius:7px;
+  overflow:hidden;background:var(--ink-3);border:1px solid var(--line)}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb .x{position:absolute;top:3px;right:3px;width:22px;height:22px;border-radius:50%;
+  background:rgba(0,0,0,.75);color:#fff;font-size:14px;line-height:22px;text-align:center}
+.thumb .n{position:absolute;bottom:0;left:0;padding:1px 5px;font-size:10px;
+  background:rgba(0,0,0,.7);border-top-right-radius:5px}
+.addphoto{flex:0 0 auto;width:104px;height:78px;border-radius:7px;border:1px dashed var(--line);
+  color:var(--paper-dim);display:grid;place-items:center;font-size:12px;text-align:center;line-height:1.3}
+
+.hint{font-size:12px;color:var(--paper-dim);line-height:1.5;margin:-6px 0 16px}
+.sect{margin:26px 0 12px;padding-top:18px;border-top:1px solid var(--line)}
+.sect:first-child{margin-top:6px;padding-top:0;border-top:0}
+
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--safe-b) + 26px);
+  background:var(--paper);color:var(--ink);padding:11px 18px;border-radius:22px;font-size:14px;
+  font-weight:550;opacity:0;transition:opacity .2s;pointer-events:none;z-index:99;max-width:88vw;
+  text-align:center}
+#toast.on{opacity:1}
+#busy{position:fixed;inset:0;background:rgba(10,9,7,.82);display:none;place-items:center;
+  z-index:98;font-size:14px;color:var(--paper-dim);letter-spacing:.06em}
+#busy.on{display:grid}
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- ============ CLANS ============ -->
+<section class="screen on" id="s-clans">
+  <div class="bar">
+    <div style="flex:1">
+      <h1 style="margin:0">Hyena ID</h1>
+      <div class="sub" id="libcount">—</div>
+    </div>
+    <button class="iconbtn" id="btn-settings" aria-label="Library settings">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 8.9 19a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 5 8.9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </div>
+  <div class="scroll">
+    <div class="eyebrow" style="padding:14px 14px 8px">Clan</div>
+    <div id="clanlist"></div>
+  </div>
+</section>
+
+<!-- ============ CLASSES ============ -->
+<section class="screen" id="s-classes">
+  <div class="bar">
+    <button class="iconbtn" data-back="clans" aria-label="Back to clans">
+      <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <div style="flex:1;min-width:0">
+      <h1 id="clantitle">—</h1>
+      <div class="sub">Age–sex class</div>
+    </div>
+    <button class="iconbtn" id="btn-new" aria-label="Add hyena">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+  </div>
+  <div class="scroll"><div id="classlist"></div></div>
+</section>
+
+<!-- ============ BROWSE ============ -->
+<section class="screen" id="s-browse">
+  <div id="stage">
+    <div class="pane top" id="pane-l"></div>
+    <div class="pane bot" id="pane-r"></div>
+    <div id="hud">
+      <button class="iconbtn" data-back="classes" aria-label="Back to classes">
+        <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <div class="pos" id="pos"></div>
+      <button class="iconbtn" id="btn-edit" aria-label="Edit this hyena">
+        <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+      </button>
+    </div>
+    <div id="card"></div>
+    <div id="dots"></div>
+  </div>
+</section>
+
+<!-- ============ EDIT ============ -->
+<section class="screen" id="s-edit">
+  <div class="bar">
+    <button class="iconbtn" id="btn-cancel" aria-label="Cancel">
+      <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+    <div style="flex:1;min-width:0"><h1 id="edittitle">New hyena</h1></div>
+    <button class="iconbtn" id="btn-save" aria-label="Save">
+      <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
+    </button>
+  </div>
+  <div class="scroll">
+    <div class="sect">
+      <div class="field"><label>Name</label><input id="f-name" autocapitalize="characters" placeholder="LING"></div>
+      <div class="field"><label>Full name</label><input id="f-full" placeholder="Ling Ling"></div>
+      <div class="two">
+        <div class="field"><label>ID code</label><input id="f-code" class="mono" autocapitalize="characters" placeholder="lng"></div>
+        <div class="field"><label>Sex</label><input id="f-sex" placeholder="unk"></div>
+      </div>
+      <div class="two">
+        <div class="field"><label>Date of birth</label><input id="f-dob" placeholder="14 Mar 2024"></div>
+        <div class="field"><label>Mom</label><input id="f-mom" autocapitalize="characters" placeholder="MAMBA"></div>
+      </div>
+      <div class="field"><label>Ear damage &amp; notes</label><textarea id="f-ear" placeholder="missing front lip"></textarea></div>
+      <p class="hint">Whatever you type here is exactly what shows on the photo. Nothing is checked or linked to the database.</p>
+    </div>
+
+    <div class="sect">
+      <div class="eyebrow" style="margin-bottom:9px">Left side</div>
+      <div class="shelf" id="shelf-l"></div>
+      <div class="eyebrow" style="margin:14px 0 9px">Right side</div>
+      <div class="shelf" id="shelf-r"></div>
+      <p class="hint">Photo 1 is the default. Tap a photo to make it the default; the rest are the alternates you swipe sideways to reach.</p>
+    </div>
+
+    <div class="sect">
+      <div class="eyebrow" style="margin-bottom:9px">Folder</div>
+      <div class="two">
+        <div class="field"><label>Clan</label><select id="f-clan"></select></div>
+        <div class="field"><label>Class</label><select id="f-class"></select></div>
+      </div>
+      <p class="hint">Change these to move the hyena. All photos move with it.</p>
+      <button class="btn danger" id="btn-del">Delete this hyena</button>
+    </div>
+  </div>
+  <input type="file" id="picker" accept="image/*" multiple hidden>
+</section>
+
+<!-- ============ SETTINGS ============ -->
+<section class="screen" id="s-settings">
+  <div class="bar">
+    <button class="iconbtn" data-back="clans" aria-label="Back">
+      <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <div style="flex:1"><h1>Library</h1></div>
+  </div>
+  <div class="scroll">
+    <div class="sect">
+      <div class="eyebrow" style="margin-bottom:10px">Stored on this device</div>
+      <div id="stats" class="mono" style="font-size:13px;line-height:1.9;color:var(--paper-dim)"></div>
+    </div>
+    <div class="sect">
+      <div class="eyebrow" style="margin-bottom:10px">Share with another device</div>
+      <p class="hint" style="margin-top:0">Export writes one file holding every hyena and photo. Import adds them to whatever is already here; a hyena with the same name in the same folder is replaced.</p>
+      <button class="btn ghost" id="btn-export">Export library file</button>
+      <button class="btn ghost" id="btn-import">Import library file</button>
+      <input type="file" id="imp" accept=".json,application/json" hidden>
+    </div>
+    <div class="sect">
+      <div class="eyebrow" style="margin-bottom:10px">Reset</div>
+      <button class="btn danger" id="btn-wipe">Erase everything on this device</button>
+    </div>
+  </div>
+</section>
+
+</div>
+<div id="toast"></div>
+<div id="busy">working…</div>
+
+<script>
+"use strict";
+
+const CLANS   = ["KCM North","KCM South","Talek West"];
+const CLASSES = ["Cubs","Subadults","Adult Females","Immigrant Males","Aliens"];
+const MAXPX = 1600, QUALITY = 0.82;
+
+/* ---------------- storage ---------------- */
+let db;
+function open(){
+  return new Promise((res,rej)=>{
+    const r = indexedDB.open("hyenaid",1);
+    r.onupgradeneeded = e=>{
+      const d = e.target.result;
+      d.createObjectStore("hyenas",{keyPath:"id"});
+      d.createObjectStore("photos",{keyPath:"id"});
+    };
+    r.onsuccess = e=>{db=e.target.result;res()};
+    r.onerror = ()=>rej(r.error);
+  });
+}
+function tx(store,mode){return db.transaction(store,mode).objectStore(store)}
+function req(r){return new Promise((res,rej)=>{r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+const putH = h=>req(tx("hyenas","readwrite").put(h));
+const delH = id=>req(tx("hyenas","readwrite").delete(id));
+const allH = ()=>req(tx("hyenas","readonly").getAll());
+const putP = (id,blob)=>req(tx("photos","readwrite").put({id,blob}));
+const getP = id=>req(tx("photos","readonly").get(id));
+const delP = id=>req(tx("photos","readwrite").delete(id));
+const allP = ()=>req(tx("photos","readonly").getAll());
+
+/* ---------------- state ---------------- */
+let hyenas = [];
+let cur = {clan:null, cls:null, list:[], i:0, a:0};
+let draft = null;
+let cardOn = true;
+const urls = new Map();
+
+function url(id){
+  if(urls.has(id)) return urls.get(id);
+  return null;
+}
+async function ensureUrl(id){
+  if(urls.has(id)) return urls.get(id);
+  const rec = await getP(id);
+  if(!rec) return null;
+  const u = URL.createObjectURL(rec.blob);
+  urls.set(id,u);
+  return u;
+}
+
+const uid = ()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+const $ = s=>document.querySelector(s);
+
+let toastT;
+function toast(msg){
+  const t=$("#toast"); t.textContent=msg; t.classList.add("on");
+  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("on"),2200);
+}
+const busy = on=>$("#busy").classList.toggle("on",on);
+
+/* ---------------- image resize ---------------- */
+async function shrink(file){
+  let bmp;
+  try{ bmp = await createImageBitmap(file,{imageOrientation:"from-image"}); }
+  catch(e){ bmp = await createImageBitmap(file); }
+  const scale = Math.min(1, MAXPX/Math.max(bmp.width,bmp.height));
+  const w = Math.round(bmp.width*scale), h = Math.round(bmp.height*scale);
+  const c = document.createElement("canvas"); c.width=w; c.height=h;
+  c.getContext("2d",{alpha:false}).drawImage(bmp,0,0,w,h);
+  bmp.close && bmp.close();
+  let blob = await new Promise(r=>c.toBlob(r,"image/webp",QUALITY));
+  if(!blob || blob.size===0) blob = await new Promise(r=>c.toBlob(r,"image/jpeg",0.85));
+  return blob;
+}
+
+/* ---------------- navigation ---------------- */
+function show(name){
+  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("on"));
+  $("#s-"+name).classList.add("on");
+}
+document.querySelectorAll("[data-back]").forEach(b=>{
+  b.onclick = ()=>{
+    const t = b.dataset.back;
+    if(t==="classes"){ renderClasses(); show("classes"); }
+    else { renderClans(); show("clans"); }
+  };
+});
+
+/* ---------------- clans ---------------- */
+const chev = '<svg class="chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>';
+
+function renderClans(){
+  const el = $("#clanlist"); el.innerHTML="";
+  CLANS.forEach(c=>{
+    const n = hyenas.filter(h=>h.clan===c).length;
+    const b = document.createElement("button");
+    b.className = "row" + (n?"":" empty");
+    b.innerHTML = `<span class="label">${c}</span><span class="count">${n||"—"}</span>${chev}`;
+    b.onclick = ()=>{ cur.clan=c; renderClasses(); show("classes"); };
+    el.appendChild(b);
+  });
+  $("#libcount").textContent = hyenas.length ? hyenas.length+" hyenas on this device" : "No hyenas yet — pick a clan to start";
+}
+
+function renderClasses(){
+  $("#clantitle").textContent = cur.clan;
+  const el = $("#classlist"); el.innerHTML="";
+  CLASSES.forEach(k=>{
+    const n = hyenas.filter(h=>h.clan===cur.clan && h.cls===k).length;
+    const b = document.createElement("button");
+    b.className = "row" + (n?"":" empty");
+    b.innerHTML = `<span class="label">${k}</span><span class="count">${n||"—"}</span>${chev}`;
+    b.onclick = ()=>{
+      if(!n){ toast("No hyenas in "+k+" yet"); return; }
+      cur.cls=k; openBrowse();
+    };
+    el.appendChild(b);
+  });
+}
+
+/* ---------------- browse ---------------- */
+function sortList(){
+  cur.list = hyenas.filter(h=>h.clan===cur.clan && h.cls===cur.cls)
+                   .sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+}
+function openBrowse(keepName){
+  sortList();
+  if(!cur.list.length){ renderClasses(); show("classes"); return; }
+  cur.i = keepName ? Math.max(0, cur.list.findIndex(h=>h.name===keepName)) : 0;
+  cur.a = 0;
+  show("browse"); paint();
+}
+
+async function paintPane(sel,ids,side){
+  const p = $(sel);
+  if(!ids.length){ p.innerHTML = `<div class="none">no ${side.toLowerCase()} photo</div>`; return; }
+  const id = ids[cur.a % ids.length];
+  const u = await ensureUrl(id);
+  p.innerHTML = `<img alt="${side} side" src="${u}"><span class="side">${side}</span>`;
+}
+
+function paint(){
+  const h = cur.list[cur.i];
+  if(!h) return;
+  paintPane("#pane-l", h.left||[], "LEFT");
+  paintPane("#pane-r", h.right||[], "RIGHT");
+
+  const bits = [];
+  if(h.code) bits.push(`<div><span class="k">ID</span><span class="mono">${esc(h.code)}</span></div>`);
+  if(h.sex)  bits.push(`<div><span class="k">Sex</span>${esc(h.sex)}</div>`);
+  if(h.dob)  bits.push(`<div><span class="k">DOB</span>${esc(h.dob)}</div>`);
+  if(h.mom)  bits.push(`<div><span class="k">Mom</span>${esc(h.mom)}</div>`);
+
+  $("#card").innerHTML =
+    `<div class="nm">${esc(h.name||"—")}</div>` +
+    (h.full ? `<div class="full">${esc(h.full)}</div>` : "") +
+    (bits.length ? `<div class="grid">${bits.join("")}</div>` : "") +
+    (h.ear ? `<div class="ear">${esc(h.ear)}</div>` : "");
+
+  $("#pos").textContent = `${cur.clan} · ${cur.cls} · ${cur.i+1}/${cur.list.length}`;
+
+  const n = Math.max((h.left||[]).length, (h.right||[]).length);
+  $("#dots").innerHTML = n>1 ? Array.from({length:n},(_,k)=>`<i class="${k===cur.a%n?"on":""}"></i>`).join("") : "";
+}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+
+function step(d){
+  cur.i = (cur.i + d + cur.list.length) % cur.list.length;
+  cur.a = 0; paint();
+}
+function angle(d){
+  const h = cur.list[cur.i];
+  const n = Math.max((h.left||[]).length,(h.right||[]).length);
+  if(n<2){ toast("Only one photo for "+(h.name||"this hyena")); return; }
+  cur.a = (cur.a + d + n) % n; paint();
+}
+
+/* swipe */
+const stage = $("#stage");
+let sx=0, sy=0, moved=false, t0=0;
+stage.addEventListener("touchstart",e=>{
+  if(e.touches.length!==1) return;
+  sx=e.touches[0].clientX; sy=e.touches[0].clientY; moved=false; t0=Date.now();
+},{passive:true});
+stage.addEventListener("touchmove",e=>{
+  if(Math.abs(e.touches[0].clientX-sx)>8||Math.abs(e.touches[0].clientY-sy)>8) moved=true;
+},{passive:true});
+stage.addEventListener("touchend",e=>{
+  const t=e.changedTouches[0], dx=t.clientX-sx, dy=t.clientY-sy;
+  if(!moved && Date.now()-t0<400){ toggleCard(); return; }
+  if(Math.abs(dy)>Math.abs(dx) && Math.abs(dy)>50) step(dy<0?1:-1);
+  else if(Math.abs(dx)>50) angle(dx<0?1:-1);
+},{passive:true});
+stage.addEventListener("click",e=>{
+  if(e.target.closest("#hud")) return;
+  if(!("ontouchstart" in window)) toggleCard();
+});
+function toggleCard(){
+  cardOn=!cardOn;
+  $("#card").classList.toggle("hidden",!cardOn);
+  $("#hud").classList.toggle("hidden",!cardOn);
+}
+addEventListener("keydown",e=>{
+  if(!$("#s-browse").classList.contains("on")) return;
+  if(e.key==="ArrowDown") step(1);
+  else if(e.key==="ArrowUp") step(-1);
+  else if(e.key==="ArrowRight") angle(1);
+  else if(e.key==="ArrowLeft") angle(-1);
+  else if(e.key===" "){ e.preventDefault(); toggleCard(); }
+  else if(e.key==="Escape"){ renderClasses(); show("classes"); }
+});
+
+/* ---------------- edit ---------------- */
+function fillSelects(){
+  $("#f-clan").innerHTML = CLANS.map(c=>`<option>${c}</option>`).join("");
+  $("#f-class").innerHTML = CLASSES.map(c=>`<option>${c}</option>`).join("");
+}
+
+function openEdit(h){
+  draft = h ? JSON.parse(JSON.stringify(h))
+            : {id:uid(), clan:cur.clan||CLANS[0], cls:cur.cls||CLASSES[0],
+               name:"",full:"",code:"",sex:"",dob:"",mom:"",ear:"",left:[],right:[]};
+  draft._new = !h;
+  $("#edittitle").textContent = h ? (h.name||"Edit hyena") : "New hyena";
+  $("#f-name").value=draft.name; $("#f-full").value=draft.full;
+  $("#f-code").value=draft.code; $("#f-sex").value=draft.sex;
+  $("#f-dob").value=draft.dob;   $("#f-mom").value=draft.mom;
+  $("#f-ear").value=draft.ear;
+  $("#f-clan").value=draft.clan; $("#f-class").value=draft.cls;
+  $("#btn-del").style.display = h ? "block" : "none";
+  shelves(); show("edit");
+}
+
+async function shelves(){
+  for(const side of ["left","right"]){
+    const el = $(side==="left" ? "#shelf-l" : "#shelf-r");
+    el.innerHTML="";
+    for(let k=0;k<draft[side].length;k++){
+      const id = draft[side][k];
+      const u = await ensureUrl(id);
+      const d = document.createElement("div");
+      d.className="thumb";
+      d.innerHTML = `<img src="${u}" alt=""><span class="n">${k===0?"default":k+1}</span><span class="x">×</span>`;
+      d.querySelector(".x").onclick = ev=>{
+        ev.stopPropagation();
+        draft[side].splice(k,1); shelves();
+      };
+      d.onclick = ()=>{
+        if(k===0) return;
+        draft[side].splice(k,1); draft[side].unshift(id); shelves();
+        toast("Default set");
+      };
+      el.appendChild(d);
+    }
+    const add = document.createElement("button");
+    add.className="addphoto"; add.innerHTML="+ add<br>photo";
+    add.onclick = ()=>pick(side);
+    el.appendChild(add);
+  }
+}
+
+let pickSide = "left";
+function pick(side){ pickSide=side; $("#picker").value=""; $("#picker").click(); }
+$("#picker").onchange = async e=>{
+  const files = [...e.target.files]; if(!files.length) return;
+  busy(true);
+  try{
+    for(const f of files){
+      const blob = await shrink(f);
+      const id = uid();
+      await putP(id,blob);
+      urls.set(id, URL.createObjectURL(blob));
+      draft[pickSide].push(id);
+    }
+    await shelves();
+    toast(files.length+" photo"+(files.length>1?"s":"")+" added");
+  }catch(err){ toast("Could not read that photo"); console.error(err); }
+  busy(false);
+};
+
+$("#btn-new").onclick = ()=>openEdit(null);
+$("#btn-edit").onclick = ()=>openEdit(cur.list[cur.i]);
+$("#btn-cancel").onclick = ()=>{
+  if(draft && draft._new && $("#s-browse")) {}
+  draft=null;
+  if(cur.list.length && cur.cls){ openBrowse(); } else { renderClasses(); show("classes"); }
+};
+
+$("#btn-save").onclick = async ()=>{
+  draft.name  = $("#f-name").value.trim();
+  draft.full  = $("#f-full").value.trim();
+  draft.code  = $("#f-code").value.trim();
+  draft.sex   = $("#f-sex").value.trim();
+  draft.dob   = $("#f-dob").value.trim();
+  draft.mom   = $("#f-mom").value.trim();
+  draft.ear   = $("#f-ear").value.trim();
+  draft.clan  = $("#f-clan").value;
+  draft.cls   = $("#f-class").value;
+  if(!draft.name){ toast("Give it a name first"); $("#f-name").focus(); return; }
+  delete draft._new;
+  await putH(draft);
+  hyenas = await allH();
+  cur.clan = draft.clan; cur.cls = draft.cls;
+  const nm = draft.name; draft=null;
+  toast("Saved");
+  openBrowse(nm);
+};
+
+$("#btn-del").onclick = async ()=>{
+  if(!confirm("Delete "+(draft.name||"this hyena")+" and its photos?")) return;
+  for(const id of [...draft.left,...draft.right]) await delP(id);
+  await delH(draft.id);
+  hyenas = await allH();
+  draft=null;
+  sortList();
+  if(cur.list.length) openBrowse(); else { renderClasses(); show("classes"); }
+  toast("Deleted");
+};
+
+/* ---------------- settings ---------------- */
+$("#btn-settings").onclick = async ()=>{
+  const ps = await allP();
+  const bytes = ps.reduce((s,p)=>s+(p.blob.size||0),0);
+  const mb = (bytes/1048576).toFixed(1);
+  const lines = CLANS.map(c=>{
+    const n = hyenas.filter(h=>h.clan===c).length;
+    return `${c.padEnd(12," ")} ${String(n).padStart(3," ")}`;
+  });
+  $("#stats").innerHTML = lines.join("<br>") +
+    `<br><br>${hyenas.length} hyenas · ${ps.length} photos · ${mb} MB`;
+  show("settings");
+};
+
+$("#btn-export").onclick = async ()=>{
+  busy(true);
+  try{
+    const ps = await allP();
+    const photos = {};
+    for(const p of ps) photos[p.id] = await blob2b64(p.blob);
+    const payload = {format:"hyena-id-1", exported:new Date().toISOString(), hyenas, photos};
+    const b = new Blob([JSON.stringify(payload)],{type:"application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(b);
+    a.download = "hyena-id-" + new Date().toISOString().slice(0,10) + ".json";
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+    toast("Exported");
+  }catch(e){ toast("Export failed"); console.error(e); }
+  busy(false);
+};
+
+$("#btn-import").onclick = ()=>{ $("#imp").value=""; $("#imp").click(); };
+$("#imp").onchange = async e=>{
+  const f = e.target.files[0]; if(!f) return;
+  busy(true);
+  try{
+    const data = JSON.parse(await f.text());
+    if(data.format!=="hyena-id-1") throw new Error("wrong format");
+    for(const [id,b64] of Object.entries(data.photos||{})) await putP(id, b642blob(b64));
+    const existing = await allH();
+    let added=0, replaced=0;
+    for(const h of data.hyenas||[]){
+      const dup = existing.find(x=>x.clan===h.clan && x.cls===h.cls &&
+                                   (x.name||"").toUpperCase()===(h.name||"").toUpperCase());
+      if(dup){ h.id = dup.id; replaced++; } else added++;
+      await putH(h);
+    }
+    hyenas = await allH();
+    renderClans();
+    toast(added+" added, "+replaced+" replaced");
+    show("clans");
+  }catch(err){ toast("That file is not a hyena library"); console.error(err); }
+  busy(false);
+};
+
+$("#btn-wipe").onclick = async ()=>{
+  if(!confirm("Erase every hyena and photo stored on this device? This cannot be undone.")) return;
+  await req(tx("hyenas","readwrite").clear());
+  await req(tx("photos","readwrite").clear());
+  urls.forEach(u=>URL.revokeObjectURL(u)); urls.clear();
+  hyenas = []; renderClans(); show("clans");
+  toast("Erased");
+};
+
+function blob2b64(b){
+  return new Promise((res,rej)=>{
+    const r=new FileReader();
+    r.onload=()=>res(r.result);
+    r.onerror=()=>rej(r.error);
+    r.readAsDataURL(b);
+  });
+}
+function b642blob(d){
+  const [head,body]=d.split(",");
+  const mime=/:(.*?);/.exec(head)[1];
+  const bin=atob(body), arr=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+  return new Blob([arr],{type:mime});
+}
+
+/* ---------------- boot ---------------- */
+(async function(){
+  fillSelects();
+  try{
+    await open();
+    hyenas = await allH();
+  }catch(e){
+    toast("This browser blocked local storage");
+    console.error(e);
+  }
+  renderClans();
+  if("serviceWorker" in navigator && location.protocol.startsWith("http")){
+    navigator.serviceWorker.register("sw.js").catch(()=>{});
+  }
+})();
+</script>
+</body>
+</html>
