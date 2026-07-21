@@ -3,7 +3,7 @@
 A phone and tablet replacement for the ID binders. Left photo on top, right photo on
 bottom, with text you type yourself overlaid. Works with no signal once installed.
 
-Current build: **2026-07-19n**
+Current build: **2026-07-19o**
 
 ## Files
 

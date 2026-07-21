@@ -373,11 +373,13 @@ button{background:none;border:0;cursor:pointer}
 </div>
 <div id="modal">
   <div class="sheet">
-    <div class="eyebrow" style="margin-bottom:12px">New clan</div>
-    <div class="field" style="margin-bottom:10px">
-      <input id="m-clan" placeholder="Clan name" autocapitalize="words">
+    <div class="eyebrow" style="margin-bottom:12px" id="m-title">New clan</div>
+    <div id="m-body">
+      <div class="field" style="margin-bottom:10px">
+        <input id="m-clan" placeholder="Clan name" autocapitalize="words">
+      </div>
+      <p class="hint" style="margin:0 0 14px">It gets the same five age–sex classes as every other clan.</p>
     </div>
-    <p class="hint" style="margin:0 0 14px">It gets the same five age–sex classes as every other clan.</p>
     <button class="btn" id="m-ok">Add clan</button>
     <button class="btn ghost" id="m-no">Cancel</button>
   </div>
@@ -394,7 +396,7 @@ const ALLCLANS = () => [...BUILTIN, ...extra];
 const CLANS    = () => ALLCLANS().filter(c=>!hidden.includes(c));
 const CLASSES = ["Cubs","Subadults","Adult Females","Immigrant Males","Aliens"];
 const MAXPX = 1600, QUALITY = 0.82;
-const BUILD = "2026-07-19n";
+const BUILD = "2026-07-19o";
 
 /* ---------------- storage ---------------- */
 let db;
@@ -1023,14 +1025,34 @@ async function killClan(c,n){
   toast(c+" deleted");
 }
 
+let modalMode = "clan";
 function openNewClan(){
-  $("#m-clan").value=""; $("#modal").classList.add("on");
+  modalMode = "clan";
+  $("#m-title").textContent = "New clan";
+  $("#m-body").innerHTML =
+    `<div class="field" style="margin-bottom:10px">` +
+    `<input id="m-clan" placeholder="Clan name" autocapitalize="words"></div>` +
+    `<p class="hint" style="margin:0 0 14px">It gets the same five age–sex classes as every other clan.</p>`;
+  $("#m-ok").textContent = "Add clan";
+  $("#m-no").textContent = "Cancel";
+  $("#m-clan").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#m-ok").click(); });
+  $("#modal").classList.add("on");
   setTimeout(()=>$("#m-clan").focus(),80);
 }
-$("#m-no").onclick = ()=>$("#modal").classList.remove("on");
-$("#modal").onclick = e=>{ if(e.target.id==="modal") $("#modal").classList.remove("on"); };
-$("#m-clan").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#m-ok").click(); });
+$("#m-no").onclick = ()=>{ pending=null; $("#modal").classList.remove("on"); };
+$("#modal").onclick = e=>{
+  if(e.target.id==="modal" && modalMode!=="parts"){ $("#modal").classList.remove("on"); }
+};
 $("#m-ok").onclick = async ()=>{
+  if(modalMode === "parts"){
+    const {parts, i, cl, kl} = pending;
+    $("#modal").classList.remove("on");
+    const ok = await writePart(parts[i], partName(cl, kl, i, parts.length));
+    if(!ok){ pending=null; return; }
+    if(i + 1 < parts.length){ pending.i = i + 1; showParts(); }
+    else { pending = null; toast("All parts saved"); }
+    return;
+  }
   const nm = $("#m-clan").value.trim();
   if(!nm){ toast("Type a clan name first"); return; }
   if(CLANS().some(c=>c.toLowerCase()===nm.toLowerCase())){ toast(nm+" already exists"); return; }
@@ -1096,9 +1118,98 @@ function sizeExport(){
 $("#x-clan").onchange = sizeExport;
 $("#x-class").onchange = sizeExport;
 
+/* Peak memory is roughly the size of one file, so big clans go out in parts.
+   Each part is a complete library file; importing them all rebuilds the clan. */
+function partBudget(){
+  return (/iPhone|iPad|Android/i.test(navigator.userAgent) ? 70 : 250) * 1048576;
+}
+function planParts(sel){
+  const budget = partBudget() / 1.37;      // allow for base64 growth
+  const parts = [];
+  let cur = [], run = 0;
+  for(const h of sel){
+    let bytes = 0;
+    [...(h.left||[]),...(h.right||[])].forEach(id=>bytes += photoSize.get(id)||0);
+    if(cur.length && run + bytes > budget){ parts.push(cur); cur = []; run = 0; }
+    cur.push(h); run += bytes;
+  }
+  if(cur.length) parts.push(cur);
+  return parts;
+}
+
+let pending = null;   // {parts, i, cl, kl}
+
+async function writePart(list, fname){
+  busy(true, "preparing…");
+  try{
+    const parts = [
+      '{"format":"hyena-id-1","exported":' + JSON.stringify(new Date().toISOString()) +
+      ',"clans":' + JSON.stringify(extra) +
+      ',"hidden":' + JSON.stringify(hidden) +
+      ',"hyenas":' + JSON.stringify(list) +
+      ',"photos":{'
+    ];
+    let first = true, done = 0;
+    const total = list.reduce((s,h)=>s+(h.left||[]).length+(h.right||[]).length,0);
+    for(const h of list){
+      for(const id of [...(h.left||[]),...(h.right||[])]){
+        const rec = await getP(id);
+        if(!rec) continue;
+        const b64 = await blob2b64(rec.blob);
+        parts.push((first?"":",") + JSON.stringify(id) + ":" + JSON.stringify(b64));
+        first = false;
+        if(++done % 10 === 0) busy(true, `${done} of ${total} photos…`);
+      }
+    }
+    parts.push("}}");
+    const b = new Blob(parts,{type:"application/json"});
+    parts.length = 0;                     // let the pieces go before sharing
+    busy(false);
+    await deliver(b, fname, list.length);
+    return true;
+  }catch(e){
+    busy(false);
+    toast("That part was still too big — try one class");
+    console.error(e);
+    return false;
+  }
+}
+
+function partName(cl, kl, i, n){
+  const slug = (cl + (kl ? "-" + kl : "")).toLowerCase().replace(/[^a-z0-9]+/g,"-");
+  const tag = n > 1 ? `-part${i+1}of${n}` : "";
+  return slug + tag + "-" + new Date().toISOString().slice(0,10) + ".json";
+}
+
+function showParts(){
+  const {parts, i, cl, kl} = pending;
+  $("#m-title").textContent = "Export in parts";
+  $("#m-body").innerHTML =
+    `<p class="hint" style="margin:0 0 14px">${esc(cl)}${kl ? " · " + esc(kl) : ""} is too big for one file. ` +
+    `It goes out as ${parts.length} files — save each one, then import all of them on the other device.</p>` +
+    `<div class="mono" style="font-size:13px;color:var(--paper-dim);margin-bottom:14px">` +
+    `part ${i+1} of ${parts.length} · ${parts[i].length} hyenas</div>`;
+  $("#m-ok").textContent = `Save part ${i+1}`;
+  $("#m-no").textContent = i ? "Stop" : "Cancel";
+  $("#modal").classList.add("on");
+}
+
 $("#btn-export").onclick = async ()=>{
   const sel = exportSel();
   if(!sel.length){ toast("Nothing in that folder"); return; }
+  const cl = $("#x-clan").value, kl = $("#x-class").value;
+  const parts = planParts(sel);
+  if(parts.length > 1){
+    pending = {parts, i:0, cl, kl};
+    modalMode = "parts";
+    showParts();
+    return;
+  }
+  await writePart(sel, partName(cl, kl, 0, 1));
+};
+
+async function legacyExport(){
+  const sel = exportSel();
   const cl = $("#x-clan").value, kl = $("#x-class").value;
   busy(true, "preparing…");
   try{
@@ -1123,16 +1234,14 @@ $("#btn-export").onclick = async ()=>{
     }
     parts.push("}}");
     const b = new Blob(parts,{type:"application/json"});
-    const slug = (cl + (kl ? "-" + kl : "")).toLowerCase().replace(/[^a-z0-9]+/g,"-");
-    const fname = slug + "-" + new Date().toISOString().slice(0,10) + ".json";
     busy(false);
-    await deliver(b, fname, sel.length);
+    await deliver(b, partName(cl, kl, 0, 1), sel.length);
   }catch(e){
     toast("Export failed — try one class at a time");
     console.error(e);
   }
   busy(false);
-};
+}
 
 /* iOS Safari ignores <a download>, which is why exporting there flashed white
    and saved nothing. Hand the file to the system share sheet instead, and keep
