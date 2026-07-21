@@ -203,9 +203,19 @@ button{background:none;border:0;cursor:pointer}
   font-weight:550;opacity:0;transition:opacity .2s;pointer-events:none;z-index:99;max-width:88vw;
   text-align:center}
 #toast.on{opacity:1}
-#busy{position:fixed;inset:0;background:rgba(10,9,7,.82);display:none;place-items:center;
-  z-index:95;font-size:14px;color:var(--paper-dim);letter-spacing:.06em}
+#busy{position:fixed;inset:0;background:rgba(10,9,7,.88);display:none;place-items:center;
+  z-index:95;backdrop-filter:blur(2px)}
 #busy.on{display:grid}
+.bwrap{width:min(320px,78vw);text-align:center}
+#bmsg{font-size:14px;color:var(--paper);letter-spacing:.04em;margin-bottom:14px;
+  min-height:20px}
+#bbar{height:4px;border-radius:2px;background:var(--ink-3);overflow:hidden}
+#bbar i{display:block;height:100%;width:0;background:var(--sharpie);
+  border-radius:2px;transition:width .25s ease}
+#bbar.idle i{width:35%;animation:sweep 1.1s ease-in-out infinite}
+@keyframes sweep{0%{margin-left:-35%}100%{margin-left:100%}}
+#btime{margin-top:10px;font-size:12px;color:var(--paper-dim);
+  font-variant-numeric:tabular-nums;letter-spacing:.05em;min-height:16px}
 </style>
 </head>
 <body>
@@ -358,6 +368,11 @@ button{background:none;border:0;cursor:pointer}
       <input type="file" id="imp" accept=".json,application/json" hidden>
     </div>
     <div class="sect">
+      <div class="eyebrow" style="margin-bottom:10px">Tidying up</div>
+      <button class="btn ghost" id="btn-reclaim">Remove unused photos on this device</button>
+      <p class="hint" style="margin-top:10px">Frees the space left behind when a photo is deleted or cropped. Safe to run any time; it only touches this device.</p>
+    </div>
+    <div class="sect">
       <div class="eyebrow" style="margin-bottom:10px">Reset</div>
       <button class="btn ghost" id="btn-refresh">Reload the latest app version</button>
       <p class="hint" style="margin-top:10px">Keeps every hyena and photo. Only replaces the app itself.</p>
@@ -399,7 +414,13 @@ button{background:none;border:0;cursor:pointer}
   </div>
 </div>
 <div id="toast"></div>
-<div id="busy">working…</div>
+<div id="busy">
+  <div class="bwrap">
+    <div id="bmsg">working…</div>
+    <div id="bbar"><i></i></div>
+    <div id="btime"></div>
+  </div>
+</div>
 
 <script>
 "use strict";
@@ -415,7 +436,7 @@ const MAXPX = 1600, QUALITY = 0.82;
    The password is deliberately NOT here — it is the only thing keeping
    strangers out, and this file is public. */
 const DEFAULT_SYNC_URL = "https://hyena-sync.marahyenaproject.workers.dev";
-const BUILD = "2026-07-19r";
+const BUILD = "2026-07-19w";
 
 /* ---------------- storage ---------------- */
 let db;
@@ -511,10 +532,50 @@ function toast(msg){
   const t=$("#toast"); t.textContent=msg; t.classList.add("on");
   clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("on"),2200);
 }
-function busy(on,msg){
+let busyT0 = 0, busyTick = null, busyFrac = -1;
+
+function hms(ms){
+  const s = Math.max(0, Math.round(ms/1000));
+  const m = Math.floor(s/60);
+  return m ? `${m}m ${String(s%60).padStart(2,"0")}s` : `${s}s`;
+}
+
+function busyClock(){
+  if(!busyT0){ $("#btime").textContent = ""; return; }
+  const el = Date.now() - busyT0;
+  let t = hms(el) + " elapsed";
+  if(busyFrac > 0.02 && busyFrac < 1){
+    t += " · about " + hms(el/busyFrac - el) + " left";
+  }
+  $("#btime").textContent = t;
+}
+
+/* busy(on, message, fraction)
+   fraction omitted -> sweeping bar, no estimate */
+function busy(on, msg, frac){
   const b = $("#busy");
-  b.textContent = msg || "working…";
-  b.classList.toggle("on",on);
+  $("#bmsg").textContent = msg || "working…";
+  busyFrac = (typeof frac === "number") ? Math.max(0, Math.min(1, frac)) : -1;
+  const bar = $("#bbar");
+  if(busyFrac >= 0){
+    bar.classList.remove("idle");
+    bar.firstElementChild.style.width = (busyFrac*100).toFixed(1) + "%";
+  }else{
+    bar.classList.add("idle");
+    bar.firstElementChild.style.width = "";
+  }
+  if(on && !busyT0){
+    busyT0 = Date.now();
+    busyClock();
+    busyTick = setInterval(busyClock, 1000);
+  }
+  if(!on){
+    clearInterval(busyTick); busyTick = null; busyT0 = 0; busyFrac = -1;
+    $("#btime").textContent = "";
+    bar.classList.add("idle");
+    bar.firstElementChild.style.width = "";
+  }
+  b.classList.toggle("on", on);
 }
 
 /* ---------------- image resize ---------------- */
@@ -798,6 +859,8 @@ function endCrop(){
   $("#zcrop").style.display="";
 }
 $("#zcrop").onclick = e=>{ e.stopPropagation(); startCrop(); };
+
+
 $("#cropno").onclick = e=>{ e.stopPropagation(); endCrop(); };
 
 cropBox.addEventListener("pointerdown",e=>{
@@ -916,9 +979,14 @@ async function shelves(){
       const d = document.createElement("div");
       d.className="thumb";
       d.innerHTML = `<img src="${u}" alt=""><span class="n">${k===0?"default":k+1}</span><span class="x">×</span>`;
-      d.querySelector(".x").onclick = ev=>{
+      d.querySelector(".x").onclick = async ev=>{
         ev.stopPropagation();
-        draft[side].splice(k,1); shelves();
+        draft[side].splice(k,1);
+        await delP(id);                       // free the space, not just the link
+        const uu = urls.get(id);
+        if(uu) URL.revokeObjectURL(uu);
+        urls.delete(id); photoSize.delete(id);
+        shelves();
       };
       d.onclick = ()=>{
         if(k===0) return;
@@ -1024,22 +1092,58 @@ async function loadSync(){
     : "not synced yet";
 }
 
+/* Runs fn over items a few at a time. A failure on one item is retried,
+   then recorded and skipped — one bad photo must not end the whole sync.
+   If everything starts failing, stop rather than hammering the server. */
 async function pool(items, width, fn){
-  let i = 0;
+  let i = 0, failed = [], consecutive = 0, halted = false;
   const workers = Array.from({length: Math.min(width, items.length)}, async ()=>{
-    while(i < items.length) await fn(items[i++]);
+    while(i < items.length && !halted){
+      const item = items[i++];
+      let done = false;
+      for(let attempt = 0; attempt < 3 && !done; attempt++){
+        try{
+          await fn(item);
+          done = true; consecutive = 0;
+        }catch(e){
+          if(e && /Password rejected/.test(e.message)){ halted = true; throw e; }
+          if(attempt === 2){
+            failed.push(item);
+            console.warn("gave up on", item, e && e.message);
+            if(++consecutive >= 8) halted = true;
+          }else{
+            await new Promise(r=>setTimeout(r, 400 * (attempt + 1)));
+          }
+        }
+      }
+    }
   });
   await Promise.all(workers);
+  return {failed, halted};
 }
 
-async function api(method, path, body, raw){
-  const r = await fetch(syUrl.replace(/\/+$/,"") + path, {
-    method,
-    headers: Object.assign({Authorization:"Bearer " + syKey},
-                           raw ? {"Content-Type":"image/webp"}
-                               : body ? {"Content-Type":"application/json"} : {}),
-    body: raw ? body : (body ? JSON.stringify(body) : undefined)
-  });
+/* Every request gets a deadline. Without one, a stalled connection —
+   routine on a slow link — leaves the request pending for ever and the
+   whole sync waits on it. */
+async function api(method, path, body, raw, ms){
+  const ctl = new AbortController();
+  const timer = setTimeout(()=>ctl.abort(), ms || (raw ? 90000 : 45000));
+  let r;
+  try{
+    r = await fetch(syUrl.replace(/\/+$/,"") + path, {
+      method,
+      signal: ctl.signal,
+      headers: Object.assign({Authorization:"Bearer " + syKey},
+                             raw ? {"Content-Type":"image/webp"}
+                                 : body ? {"Content-Type":"application/json"} : {}),
+      body: raw ? body : (body ? JSON.stringify(body) : undefined)
+    });
+  }catch(e){
+    clearTimeout(timer);
+    if(e && e.name === "AbortError") throw new Error("timed out");
+    throw new Error("no connection");
+  }
+  clearTimeout(timer);
   if(r.status === 401) throw new Error("Password rejected");
   if(!r.ok && r.status !== 404) throw new Error("Server said " + r.status);
   return r;
@@ -1053,6 +1157,7 @@ $("#btn-sync").onclick = async ()=>{
   await putM("syncUrl", syUrl); await putM("syncKey", syKey);
 
   busy(true,"contacting camp server…");
+  const trouble = [];
   try{
     // what the server has
     const idx = await (await api("GET","/api/index")).json();
@@ -1060,14 +1165,17 @@ $("#btn-sync").onclick = async ()=>{
 
     // 1. take anything newer from the server
     let pulled = 0;
-    for(const rec of Object.values(srv)){
+    const srvList = Object.values(srv);
+    for(let i=0;i<srvList.length;i++){
+      const rec = srvList[i];
       const loc = records.find(r=>r.id===rec.id);
       if(!loc || (rec.mod||0) > (loc.mod||0)){ await putH(rec); pulled++; }
+      if(i % 25 === 0) busy(true,"reading records…", i/srvList.length);
     }
     await reload();
 
     // 2. send anything of ours the server has not seen
-    const mine = records.filter(r=>{
+    let mine = records.filter(r=>{
       const o = srv[r.id];
       return !o || (r.mod||0) > (o.mod||0);
     });
@@ -1080,12 +1188,19 @@ $("#btn-sync").onclick = async ()=>{
       const ids = [...new Set(mine.flatMap(r=>[...(r.left||[]),...(r.right||[])]))];
       const missing = ids.filter(id=>!onServer.has(id));
       let up = 0;
-      await pool(missing, 4, async id=>{
+      const sent = await pool(missing, 4, async id=>{
         const rec = await getP(id);
         if(!rec) return;
         await api("PUT","/api/photo/"+encodeURIComponent(id), rec.blob, true);
-        busy(true,`sending photo ${++up} of ${missing.length}…`);
+        up++; busy(true,`sending photo ${up} of ${missing.length}`, up/missing.length);
       });
+      if(sent.halted) throw new Error("Server stopped responding — try again later");
+      if(sent.failed.length) trouble.push(`${sent.failed.length} photos would not upload`);
+      // only claim ownership of records whose photos actually made it
+      const bad = new Set(sent.failed);
+      if(bad.size){
+        mine = mine.filter(r=>![...(r.left||[]),...(r.right||[])].some(id=>bad.has(id)));
+      }
       busy(true,"sending records…");
       const res = await (await api("POST","/api/push",{records:mine})).json();
       if(res && res.ok === false) throw new Error(res.error || "push refused");
@@ -1099,19 +1214,24 @@ $("#btn-sync").onclick = async ()=>{
         if(!photoSize.has(id)) want.push(id);
 
     let got = 0;
-    await pool(want, 4, async id=>{
+    const down = await pool(want, 4, async id=>{
       const r = await api("GET","/api/photo/"+encodeURIComponent(id));
       if(r.status === 404) return;
       const blob = await r.blob();
       await putP(id, blob);
       photoSize.set(id, blob.size);
-      busy(true,`getting photo ${++got} of ${want.length}…`);
+      got++; busy(true,`getting photo ${got} of ${want.length}`, got/want.length);
     });
+    if(down.failed.length) trouble.push(`${down.failed.length} photos would not download`);
 
     await putM("syncAt", Date.now());
     await reload();
     renderClans(); renderClanMgr(); fillExport(); await loadSync();
-    toast(`Synced · ${pulled} in, ${mine.length} out, ${got} photos down`);
+    if(trouble.length){
+      toast(trouble.join(" · ") + " — sync again to retry");
+    }else{
+      toast(`Synced · ${pulled} in, ${mine.length} out, ${got} photos down`);
+    }
   }catch(e){
     toast(e.message || "Sync failed");
     console.error(e);
@@ -1307,7 +1427,7 @@ async function writePart(list, fname){
         const b64 = await blob2b64(rec.blob);
         parts.push((first?"":",") + JSON.stringify(id) + ":" + JSON.stringify(b64));
         first = false;
-        if(++done % 10 === 0) busy(true, `${done} of ${total} photos…`);
+        if(++done % 5 === 0) busy(true, `${done} of ${total} photos`, done/total);
       }
     }
     parts.push("}}");
@@ -1378,7 +1498,7 @@ async function legacyExport(){
         const b64 = await blob2b64(rec.blob);
         parts.push((first?"":",") + JSON.stringify(id) + ":" + JSON.stringify(b64));
         first = false;
-        if(++done % 10 === 0) busy(true, `${done} of ${total} photos…`);
+        if(++done % 5 === 0) busy(true, `${done} of ${total} photos`, done/total);
       }
     }
     parts.push("}}");
@@ -1469,6 +1589,29 @@ $("#btn-refresh").onclick = async ()=>{
   }catch(e){ console.error(e); }
   location.reload(true);
 };
+
+$("#btn-reclaim").onclick = async ()=>{
+  busy(true,"looking for unused photos…");
+  try{
+    const used = new Set();
+    records.forEach(r=>[...(r.left||[]),...(r.right||[])].forEach(id=>used.add(id)));
+    await scanPhotoSizes();
+    const dead = [...photoSize.keys()].filter(id=>!used.has(id));
+    if(!dead.length){ busy(false); toast("Nothing to remove"); return; }
+    let freed = 0, i = 0;
+    for(const id of dead){
+      freed += photoSize.get(id)||0;
+      await delP(id);
+      const u = urls.get(id); if(u) URL.revokeObjectURL(u);
+      urls.delete(id); photoSize.delete(id);
+      if(++i % 20 === 0) busy(true,`removing ${i} of ${dead.length}`, i/dead.length);
+    }
+    busy(false);
+    toast(`Removed ${dead.length} photos, ${(freed/1048576).toFixed(0)} MB freed`);
+    $("#btn-settings").onclick();
+  }catch(e){ busy(false); toast("Could not tidy up"); console.error(e); }
+};
+
 
 $("#btn-wipe").onclick = async ()=>{
   if(!confirm("Erase every hyena and photo stored on this device? This cannot be undone.")) return;

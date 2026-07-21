@@ -102,6 +102,31 @@ Returns live hyenas, deletion markers, photo count and total bytes.
 
 The Cloudflare dashboard shows requests and storage under Workers and R2.
 
+## Clearing out deleted photos
+
+Deleting a photo in the app updates the hyena's record, and that syncs. But the photo
+file itself stays on the server forever — nothing removes it. After a big pruning
+session the server still holds everything, and still lists it all at every sync.
+
+`cleanup.sh` fixes that:
+
+```
+cd hyena-sync
+./cleanup.sh
+```
+
+It shows the current counts, asks for confirmation, deletes photos no hyena points at,
+and shows the counts again.
+
+**Run it only after every device has synced.** The server acts on the records it has
+received. If an RA has deleted nothing but simply hasn't synced in a while, their photos
+are still referenced and safe. The danger is the reverse: someone who added photos and
+hasn't pushed them yet has nothing on the server to protect, so there is nothing to
+delete either. In practice the rule is simply: have everyone sync, then clean.
+
+This is deliberately not a button in the app. It needs doing a few times a year, and it
+is the one operation that can remove other people's work if run at the wrong moment.
+
 ## Backups
 
 R2 is not a backup — it's the shared copy. If someone deletes a clan, the deletion syncs

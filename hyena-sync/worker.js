@@ -139,10 +139,16 @@ export default {
 
         if (req.method === "PUT") {
           const bytes = await req.arrayBuffer();
-          if (!bytes.byteLength) return json({ error: "empty body" }, 400);
-          await env.BUCKET.put("photo/" + id, bytes, {
-            httpMetadata: { contentType: req.headers.get("Content-Type") || "image/webp" },
-          });
+          if (!bytes.byteLength) return json({ error: "empty body", id }, 400);
+          if (bytes.byteLength > 50 * 1024 * 1024)
+            return json({ error: "photo too large", id, size: bytes.byteLength }, 413);
+          try {
+            await env.BUCKET.put("photo/" + id, bytes, {
+              httpMetadata: { contentType: req.headers.get("Content-Type") || "image/webp" },
+            });
+          } catch (e) {
+            return json({ error: "store failed: " + String(e && e.message || e), id }, 502);
+          }
           return json({ ok: true, size: bytes.byteLength });
         }
         if (req.method === "GET") {
@@ -156,6 +162,28 @@ export default {
             },
           });
         }
+      }
+
+      /* Remove photos no record points at any more.
+         Only safe once every device has synced its record changes. */
+      if (path === "/api/gc" && req.method === "POST") {
+        const { records } = await readIndex(env);
+        const used = new Set();
+        for (const r of Object.values(records)) {
+          for (const id of [...(r.left || []), ...(r.right || [])]) used.add(id);
+        }
+        let removed = 0, freed = 0, cursor;
+        let batch = [];
+        do {
+          const list = await env.BUCKET.list({ prefix: "photo/", cursor, limit: 1000 });
+          for (const o of list.objects) {
+            if (!used.has(o.key.slice(6))) { batch.push(o.key); freed += o.size; removed++; }
+          }
+          if (batch.length >= 500) { await env.BUCKET.delete(batch); batch = []; }
+          cursor = list.truncated ? list.cursor : null;
+        } while (cursor);
+        if (batch.length) await env.BUCKET.delete(batch);
+        return json({ removed, freed, kept: used.size });
       }
 
       if (path === "/api/stat" && req.method === "GET") {
@@ -172,7 +200,9 @@ export default {
 
       return json({ error: "no such endpoint" }, 404);
     } catch (e) {
-      return json({ error: String(e && e.message || e) }, 500);
+      const detail = String((e && e.stack) || (e && e.message) || e).slice(0, 500);
+      console.error("worker error", req.method, path, detail);
+      return json({ error: detail, where: req.method + " " + path }, 500);
     }
   },
 };
