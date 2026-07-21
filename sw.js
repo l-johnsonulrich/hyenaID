@@ -1,4 +1,4 @@
-const CACHE = "hyena-id-2026-07-19p";
+const CACHE = "hyena-id-2026-07-19r";
 const FILES = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./icon-maskable-512.png", "./apple-touch-icon.png"];
 
 self.addEventListener("install", e => {

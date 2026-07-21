@@ -107,15 +107,30 @@ export default {
         return json(await mergePush(env, records));
       }
 
+      /* One listing beats thousands of individual lookups and stays well
+         inside the per-request subrequest limit. */
+      if (path === "/api/photos" && req.method === "GET") {
+        const ids = [];
+        let cursor;
+        do {
+          const list = await env.BUCKET.list({ prefix: "photo/", cursor, limit: 1000 });
+          for (const o of list.objects) ids.push(o.key.slice(6));
+          cursor = list.truncated ? list.cursor : null;
+        } while (cursor);
+        return json({ ids });
+      }
+
       if (path === "/api/have" && req.method === "POST") {
         const { ids } = await req.json();
         if (!Array.isArray(ids)) return json({ error: "ids must be a list" }, 400);
-        const missing = [];
-        for (const id of ids.slice(0, 1000)) {
-          const head = await env.BUCKET.head("photo/" + id);
-          if (!head) missing.push(id);
-        }
-        return json({ missing });
+        const have = new Set();
+        let cursor;
+        do {
+          const list = await env.BUCKET.list({ prefix: "photo/", cursor, limit: 1000 });
+          for (const o of list.objects) have.add(o.key.slice(6));
+          cursor = list.truncated ? list.cursor : null;
+        } while (cursor);
+        return json({ missing: ids.filter(id => !have.has(id)) });
       }
 
       if (path.startsWith("/api/photo/")) {
