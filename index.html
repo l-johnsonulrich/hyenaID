@@ -327,6 +327,16 @@ button{background:none;border:0;cursor:pointer}
       <div id="stats" class="mono" style="font-size:13px;line-height:1.9;color:var(--paper-dim)"></div>
     </div>
     <div class="sect">
+      <div class="eyebrow" style="margin-bottom:10px">Camp sync</div>
+      <div class="field"><label>Server address</label>
+        <input id="sy-url" placeholder="https://hyena-sync.yourname.workers.dev" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
+      <div class="field"><label>Camp password</label>
+        <input id="sy-key" type="password" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
+      <button class="btn" id="btn-sync">Sync now</button>
+      <div id="sy-stat" class="mono" style="font-size:12px;color:var(--paper-dim);margin-top:10px"></div>
+      <p class="hint" style="margin-top:10px">Sync sends your changes and collects everyone else's. Safe to run on camp WiFi as often as you like; only what changed moves.</p>
+    </div>
+    <div class="sect">
       <div class="eyebrow" style="margin-bottom:10px">Clans</div>
       <div id="clanmgr"></div>
     </div>
@@ -396,7 +406,7 @@ const ALLCLANS = () => [...BUILTIN, ...extra];
 const CLANS    = () => ALLCLANS().filter(c=>!hidden.includes(c));
 const CLASSES = ["Cubs","Subadults","Adult Females","Immigrant Males","Aliens"];
 const MAXPX = 1600, QUALITY = 0.82;
-const BUILD = "2026-07-19o";
+const BUILD = "2026-07-19p";
 
 /* ---------------- storage ---------------- */
 let db;
@@ -416,6 +426,11 @@ function open(){
 function tx(store,mode){return db.transaction(store,mode).objectStore(store)}
 function req(r){return new Promise((res,rej)=>{r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
 const putH = h=>req(tx("hyenas","readwrite").put(h));
+const stamp = h=>{ h.mod = Date.now(); return h; };
+async function reload(){
+  records = await allH();
+  hyenas = records.filter(h=>!h.del);
+}
 const delH = id=>req(tx("hyenas","readwrite").delete(id));
 const allH = ()=>req(tx("hyenas","readonly").getAll());
 const putP = (id,blob)=>req(tx("photos","readwrite").put({id,blob}));
@@ -459,7 +474,8 @@ async function saveHidden(){ hidden=[...new Set(hidden)]; await putM("hidden",hi
 const clanCount = c => hyenas.filter(h=>h.clan===c).length;
 
 /* ---------------- state ---------------- */
-let hyenas = [];
+let hyenas = [];        // live only
+let records = [];       // live plus tombstones, for sync
 let cur = {clan:null, cls:null, list:[], i:0, a:0};
 let draft = null;
 let cardOn = true;
@@ -821,13 +837,25 @@ $("#cropyes").onclick = async e=>{
     bmp.close && bmp.close();
     let blob = await new Promise(r=>c.toBlob(r,"image/webp",QUALITY));
     if(!blob) blob = await new Promise(r=>c.toBlob(r,"image/jpeg",0.85));
-    await putP(cPhotoId, blob);
-    const old = urls.get(cPhotoId);
-    if(old) URL.revokeObjectURL(old);
+    // a new id, so a synced device knows the photo changed
+    const nid = uid();
+    await putP(nid, blob);
+    const h = cur.list[cur.i];
+    for(const key of ["left","right"]){
+      const k = (h[key]||[]).indexOf(cPhotoId);
+      if(k >= 0) h[key][k] = nid;
+    }
+    await putH(stamp(h));
+    await delP(cPhotoId);
+    const oldU = urls.get(cPhotoId);
+    if(oldU) URL.revokeObjectURL(oldU);
+    urls.delete(cPhotoId);
+    photoSize.delete(cPhotoId);
     const u = URL.createObjectURL(blob);
-    urls.set(cPhotoId,u);
+    urls.set(nid,u); photoSize.set(nid, blob.size);
+    cPhotoId = nid;
     zimg.src = u;
-    photoSize.set(cPhotoId, blob.size);
+    await reload(); sortList();
     endCrop(); paint();
     toast("Cropped");
   }catch(err){ toast("Could not crop that photo"); console.error(err); }
@@ -952,8 +980,8 @@ $("#btn-save").onclick = async ()=>{
   draft.cls   = $("#f-class").value;
   if(!draft.name){ toast("Give it a name first"); $("#f-name").focus(); return; }
   delete draft._new;
-  await putH(draft);
-  hyenas = await allH();
+  await putH(stamp(draft));
+  await reload();
   cur.clan = draft.clan; cur.cls = draft.cls;
   const nm = draft.name; draft=null;
   toast("Saved");
@@ -963,8 +991,10 @@ $("#btn-save").onclick = async ()=>{
 $("#btn-del").onclick = async ()=>{
   if(!confirm("Delete "+(draft.name||"this hyena")+" and its photos?")) return;
   for(const id of [...draft.left,...draft.right]) await delP(id);
-  await delH(draft.id);
-  hyenas = await allH();
+  // keep a marker so the deletion reaches other devices at the next sync
+  await putH(stamp({id:draft.id, del:true, clan:draft.clan, cls:draft.cls,
+                    name:draft.name, left:[], right:[]}));
+  await reload();
   draft=null;
   sortList();
   if(cur.list.length) openBrowse(); else { renderClasses(); show("classes"); }
@@ -972,6 +1002,106 @@ $("#btn-del").onclick = async ()=>{
 };
 
 /* ---------------- settings ---------------- */
+/* ---------------- camp sync ---------------- */
+let syUrl = "", syKey = "";
+
+async function loadSync(){
+  syUrl = ((await getM("syncUrl"))||{}).v || "";
+  syKey = ((await getM("syncKey"))||{}).v || "";
+  $("#sy-url").value = syUrl; $("#sy-key").value = syKey;
+  const last = ((await getM("syncAt"))||{}).v;
+  $("#sy-stat").textContent = last
+    ? "last synced " + new Date(last).toLocaleString()
+    : "not synced yet";
+}
+
+async function api(method, path, body, raw){
+  const r = await fetch(syUrl.replace(/\/+$/,"") + path, {
+    method,
+    headers: Object.assign({Authorization:"Bearer " + syKey},
+                           raw ? {"Content-Type":"image/webp"}
+                               : body ? {"Content-Type":"application/json"} : {}),
+    body: raw ? body : (body ? JSON.stringify(body) : undefined)
+  });
+  if(r.status === 401) throw new Error("Password rejected");
+  if(!r.ok && r.status !== 404) throw new Error("Server said " + r.status);
+  return r;
+}
+
+$("#btn-sync").onclick = async ()=>{
+  syUrl = $("#sy-url").value.trim();
+  syKey = $("#sy-key").value.trim();
+  if(!syUrl || !syKey){ toast("Fill in the address and password"); return; }
+  await putM("syncUrl", syUrl); await putM("syncKey", syKey);
+
+  busy(true,"contacting camp server…");
+  try{
+    // what the server has
+    const idx = await (await api("GET","/api/index")).json();
+    const srv = idx.records || {};
+
+    // 1. take anything newer from the server
+    let pulled = 0;
+    for(const rec of Object.values(srv)){
+      const loc = records.find(r=>r.id===rec.id);
+      if(!loc || (rec.mod||0) > (loc.mod||0)){ await putH(rec); pulled++; }
+    }
+    await reload();
+
+    // 2. send anything of ours the server has not seen
+    const mine = records.filter(r=>{
+      const o = srv[r.id];
+      return !o || (r.mod||0) > (o.mod||0);
+    });
+
+    if(mine.length){
+      busy(true,"checking photos…");
+      const ids = [...new Set(mine.flatMap(r=>[...(r.left||[]),...(r.right||[])]))];
+      const missing = [];
+      for(let i=0;i<ids.length;i+=400){
+        const r = await api("POST","/api/have",{ids:ids.slice(i,i+400)});
+        missing.push(...(await r.json()).missing);
+      }
+      let up = 0;
+      for(const id of missing){
+        const rec = await getP(id);
+        if(!rec) continue;
+        await api("PUT","/api/photo/"+encodeURIComponent(id), rec.blob, true);
+        busy(true,`sending photo ${++up} of ${missing.length}…`);
+      }
+      busy(true,"sending records…");
+      const res = await (await api("POST","/api/push",{records:mine})).json();
+      if(res && res.ok === false) throw new Error(res.error || "push refused");
+    }
+
+    // 3. fetch any photo we are missing
+    await scanPhotoSizes();
+    const want = [];
+    for(const h of hyenas)
+      for(const id of [...(h.left||[]),...(h.right||[])])
+        if(!photoSize.has(id)) want.push(id);
+
+    let got = 0;
+    for(const id of want){
+      const r = await api("GET","/api/photo/"+encodeURIComponent(id));
+      if(r.status === 404) continue;
+      const blob = await r.blob();
+      await putP(id, blob);
+      photoSize.set(id, blob.size);
+      busy(true,`getting photo ${++got} of ${want.length}…`);
+    }
+
+    await putM("syncAt", Date.now());
+    await reload();
+    renderClans(); renderClanMgr(); fillExport(); await loadSync();
+    toast(`Synced · ${pulled} in, ${mine.length} out, ${got} photos down`);
+  }catch(e){
+    toast(e.message || "Sync failed");
+    console.error(e);
+  }
+  busy(false);
+};
+
 function renderClanMgr(){
   const el = $("#clanmgr"); el.innerHTML="";
   ALLCLANS().forEach(c=>{
@@ -1011,9 +1141,10 @@ async function killClan(c,n){
       await delP(id);
       const u = urls.get(id); if(u){ URL.revokeObjectURL(u); urls.delete(id); }
     }
-    await delH(h.id);
+    await putH(stamp({id:h.id, del:true, clan:h.clan, cls:h.cls,
+                      name:h.name, left:[], right:[]}));
   }
-  hyenas = await allH();
+  await reload();
   if(!BUILTIN.includes(c)){
     extra = extra.filter(x=>x!==c);
     hidden = hidden.filter(x=>x!==c);
@@ -1082,6 +1213,7 @@ $("#btn-settings").onclick = async ()=>{
     `<br><span style="color:var(--sharpie)">build ${BUILD}</span>`;
   renderClanMgr();
   fillExport();
+  await loadSync();
   show("settings");
 };
 
@@ -1299,7 +1431,7 @@ $("#imp").onchange = async e=>{
       if(hidden.includes(h.clan)){ hidden = hidden.filter(x=>x!==h.clan); await saveHidden(); }
       await putH(h);
     }
-    hyenas = await allH();
+    await reload();
     renderClans();
     toast(added+" added, "+merged+" updated");
     show("clans");
@@ -1327,7 +1459,7 @@ $("#btn-wipe").onclick = async ()=>{
   await req(tx("photos","readwrite").clear());
   await req(tx("meta","readwrite").clear()); extra=[]; hidden=[]; fillSelects();
   urls.forEach(u=>URL.revokeObjectURL(u)); urls.clear();
-  hyenas = []; renderClans(); show("clans");
+  hyenas = []; records = []; renderClans(); show("clans");
   toast("Erased");
 };
 
@@ -1356,7 +1488,7 @@ function b642blob(d){
     extra = (m && m.v) || [];
     const mh = await getM("hidden");
     hidden = (mh && mh.v) || [];
-    hyenas = await allH();
+    await reload();
     fillSelects();
     dropOrigs().catch(()=>{});
   }catch(e){

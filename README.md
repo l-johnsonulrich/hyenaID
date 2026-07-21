@@ -3,7 +3,7 @@
 A phone and tablet replacement for the ID binders. Left photo on top, right photo on
 bottom, with text you type yourself overlaid. Works with no signal once installed.
 
-Current build: **2026-07-19o**
+Current build: **2026-07-19p**
 
 ## Files
 
@@ -82,10 +82,26 @@ Library → Clans to manage them:
 Hidden status travels in export files. Importing a library containing hyenas from a
 hidden clan un-hides it, on the principle that arriving photos shouldn't vanish silently.
 
-## Sharing between devices
+## Camp sync
+
+If a Cloudflare Worker has been set up (see `hyena-sync/SETUP.md`), Library → Camp sync
+holds a server address and a shared camp password. Press **Sync now** and the device
+sends its changes and collects everyone else's.
+
+This is the better route once several people are adding hyenas. Only what changed moves,
+nothing large is ever held in memory, and a new RA gets the whole library with one
+button. Deletions propagate, which exports alone cannot do.
+
+The app works fine without it. Leave the fields blank and use exports.
+
+## Sharing between devices, without a server
 
 Each device holds its own library. Library → Export writes a file; Library → Import reads
 one on another device.
+
+Large clans are split into numbered parts automatically, since a browser cannot build one
+enormous file. Save each part, then import all of them on the other device; order does not
+matter.
 
 **Export one clan at a time**, or one class within a clan. The whole library in a single
 file is more than a browser can build. The size estimate under the dropdowns updates as
