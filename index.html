@@ -328,11 +328,15 @@ button{background:none;border:0;cursor:pointer}
     </div>
     <div class="sect">
       <div class="eyebrow" style="margin-bottom:10px">Camp sync</div>
-      <div class="field"><label>Server address</label>
-        <input id="sy-url" placeholder="https://hyena-sync.yourname.workers.dev" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
       <div class="field"><label>Camp password</label>
         <input id="sy-key" type="password" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
       <button class="btn" id="btn-sync">Sync now</button>
+      <details style="margin-top:12px">
+        <summary class="eyebrow" style="cursor:pointer">Server address</summary>
+        <div class="field" style="margin:10px 0 0">
+          <input id="sy-url" autocapitalize="off" autocorrect="off" spellcheck="false">
+        </div>
+      </details>
       <div id="sy-stat" class="mono" style="font-size:12px;color:var(--paper-dim);margin-top:10px"></div>
       <p class="hint" style="margin-top:10px">Sync sends your changes and collects everyone else's. Safe to run on camp WiFi as often as you like; only what changed moves.</p>
     </div>
@@ -406,7 +410,12 @@ const ALLCLANS = () => [...BUILTIN, ...extra];
 const CLANS    = () => ALLCLANS().filter(c=>!hidden.includes(c));
 const CLASSES = ["Cubs","Subadults","Adult Females","Immigrant Males","Aliens"];
 const MAXPX = 1600, QUALITY = 0.82;
-const BUILD = "2026-07-19p";
+
+/* Camp sync server. Change this line if the Worker ever moves.
+   The password is deliberately NOT here — it is the only thing keeping
+   strangers out, and this file is public. */
+const DEFAULT_SYNC_URL = "https://hyena-sync.marahyenaproject.workers.dev";
+const BUILD = "2026-07-19r";
 
 /* ---------------- storage ---------------- */
 let db;
@@ -1006,13 +1015,21 @@ $("#btn-del").onclick = async ()=>{
 let syUrl = "", syKey = "";
 
 async function loadSync(){
-  syUrl = ((await getM("syncUrl"))||{}).v || "";
+  syUrl = ((await getM("syncUrl"))||{}).v || DEFAULT_SYNC_URL;
   syKey = ((await getM("syncKey"))||{}).v || "";
   $("#sy-url").value = syUrl; $("#sy-key").value = syKey;
   const last = ((await getM("syncAt"))||{}).v;
   $("#sy-stat").textContent = last
     ? "last synced " + new Date(last).toLocaleString()
     : "not synced yet";
+}
+
+async function pool(items, width, fn){
+  let i = 0;
+  const workers = Array.from({length: Math.min(width, items.length)}, async ()=>{
+    while(i < items.length) await fn(items[i++]);
+  });
+  await Promise.all(workers);
 }
 
 async function api(method, path, body, raw){
@@ -1031,7 +1048,8 @@ async function api(method, path, body, raw){
 $("#btn-sync").onclick = async ()=>{
   syUrl = $("#sy-url").value.trim();
   syKey = $("#sy-key").value.trim();
-  if(!syUrl || !syKey){ toast("Fill in the address and password"); return; }
+  if(!syUrl){ syUrl = DEFAULT_SYNC_URL; $("#sy-url").value = syUrl; }
+  if(!syKey){ toast("Type the camp password"); $("#sy-key").focus(); return; }
   await putM("syncUrl", syUrl); await putM("syncKey", syKey);
 
   busy(true,"contacting camp server…");
@@ -1054,21 +1072,20 @@ $("#btn-sync").onclick = async ()=>{
       return !o || (r.mod||0) > (o.mod||0);
     });
 
+    // one request tells us everything the server already holds
+    busy(true,"checking photos…");
+    const onServer = new Set(((await (await api("GET","/api/photos")).json()).ids)||[]);
+
     if(mine.length){
-      busy(true,"checking photos…");
       const ids = [...new Set(mine.flatMap(r=>[...(r.left||[]),...(r.right||[])]))];
-      const missing = [];
-      for(let i=0;i<ids.length;i+=400){
-        const r = await api("POST","/api/have",{ids:ids.slice(i,i+400)});
-        missing.push(...(await r.json()).missing);
-      }
+      const missing = ids.filter(id=>!onServer.has(id));
       let up = 0;
-      for(const id of missing){
+      await pool(missing, 4, async id=>{
         const rec = await getP(id);
-        if(!rec) continue;
+        if(!rec) return;
         await api("PUT","/api/photo/"+encodeURIComponent(id), rec.blob, true);
         busy(true,`sending photo ${++up} of ${missing.length}…`);
-      }
+      });
       busy(true,"sending records…");
       const res = await (await api("POST","/api/push",{records:mine})).json();
       if(res && res.ok === false) throw new Error(res.error || "push refused");
@@ -1082,14 +1099,14 @@ $("#btn-sync").onclick = async ()=>{
         if(!photoSize.has(id)) want.push(id);
 
     let got = 0;
-    for(const id of want){
+    await pool(want, 4, async id=>{
       const r = await api("GET","/api/photo/"+encodeURIComponent(id));
-      if(r.status === 404) continue;
+      if(r.status === 404) return;
       const blob = await r.blob();
       await putP(id, blob);
       photoSize.set(id, blob.size);
       busy(true,`getting photo ${++got} of ${want.length}…`);
-    }
+    });
 
     await putM("syncAt", Date.now());
     await reload();
