@@ -151,6 +151,27 @@ button{background:none;border:0;cursor:pointer}
   -webkit-user-drag:none;pointer-events:none}
 #zclose{position:absolute;top:calc(var(--safe-t) + 8px);right:8px;
   background:rgba(255,255,255,.14);color:#fff;backdrop-filter:blur(6px);z-index:2}
+#zcrop{position:absolute;top:calc(var(--safe-t) + 8px);right:60px;
+  background:rgba(255,255,255,.14);color:#fff;backdrop-filter:blur(6px);z-index:2}
+#crop{position:absolute;display:none;border:1.5px solid var(--sharpie);
+  box-shadow:0 0 0 9999px rgba(0,0,0,.62);z-index:3;touch-action:none;cursor:move}
+#crop.on{display:block}
+#crop .ch{position:absolute;width:32px;height:32px;touch-action:none}
+#crop .ch::after{content:"";position:absolute;width:16px;height:16px;
+  border:2.5px solid var(--sharpie)}
+#crop .tl{top:-16px;left:-16px;cursor:nwse-resize}
+#crop .tl::after{top:8px;left:8px;border-right:0;border-bottom:0}
+#crop .tr{top:-16px;right:-16px;cursor:nesw-resize}
+#crop .tr::after{top:8px;right:8px;border-left:0;border-bottom:0}
+#crop .bl{bottom:-16px;left:-16px;cursor:nesw-resize}
+#crop .bl::after{bottom:8px;left:8px;border-right:0;border-top:0}
+#crop .br{bottom:-16px;right:-16px;cursor:nwse-resize}
+#crop .br::after{bottom:8px;right:8px;border-left:0;border-top:0}
+#cropbar{position:absolute;left:0;right:0;bottom:0;display:none;gap:12px;z-index:4;
+  padding:14px var(--pad) calc(var(--safe-b) + 14px);
+  background:linear-gradient(to top,rgba(10,9,7,.95) 60%,rgba(10,9,7,0))}
+#cropbar.on{display:flex}
+#cropbar .btn{margin-top:0;flex:1}
 #zlabel{position:absolute;top:calc(var(--safe-t) + 20px);left:16px;font-size:12px;
   letter-spacing:.14em;color:rgba(255,255,255,.75);text-shadow:0 1px 4px #000;
   pointer-events:none}
@@ -252,14 +273,14 @@ button{background:none;border:0;cursor:pointer}
   </div>
   <div class="scroll">
     <div class="sect">
-      <div class="field"><label>Name</label><input id="f-name" autocapitalize="characters" placeholder="LING"><div id="dupwarn"></div></div>
-      <div class="field"><label>Full name</label><input id="f-full" placeholder="Ling Ling"></div>
+      <div class="field"><label>Name</label><input id="f-name" autocapitalize="characters" placeholder="PBUT"><div id="dupwarn"></div></div>
+      <div class="field"><label>Full name</label><input id="f-full" placeholder="Princess Buttercup"></div>
       <div class="two">
-        <div class="field"><label>Sex</label><input id="f-sex" placeholder="unk"></div>
-        <div class="field"><label>Date of birth</label><input id="f-dob" placeholder="14 Mar 2024"></div>
+        <div class="field"><label>Sex</label><input id="f-sex" placeholder="F"></div>
+        <div class="field"><label>Date of birth</label><input id="f-dob" placeholder="4 Jul 13"></div>
       </div>
-      <div class="field"><label>Mom</label><input id="f-mom" autocapitalize="characters" placeholder="MAMBA"></div>
-      <div class="field"><label>Ear damage &amp; notes</label><textarea id="f-ear" placeholder="missing front lip"></textarea></div>
+      <div class="field"><label>Mom</label><input id="f-mom" autocapitalize="characters" placeholder="PARC"></div>
+      <div class="field"><label>Ear damage &amp; notes</label><textarea id="f-ear" placeholder="none"></textarea></div>
       <p class="hint">Whatever you type here is exactly what shows on the photo. Nothing is checked or linked to the database.</p>
     </div>
 
@@ -303,9 +324,15 @@ button{background:none;border:0;cursor:pointer}
     </div>
     <div class="sect">
       <div class="eyebrow" style="margin-bottom:10px">Share with another device</div>
-      <p class="hint" style="margin-top:0">Export writes one file holding every hyena and photo. Import adds them to whatever is already here; a hyena with the same name in the same folder is replaced.</p>
-      <button class="btn ghost" id="btn-export">Export library file</button>
+      <p class="hint" style="margin-top:0">Export one clan at a time. The whole library in one file is too big for a browser to build.</p>
+      <div class="two">
+        <div class="field"><label>Clan</label><select id="x-clan"></select></div>
+        <div class="field"><label>Class</label><select id="x-class"></select></div>
+      </div>
+      <div id="x-size" class="mono" style="font-size:12px;color:var(--paper-dim);margin:-6px 0 12px"></div>
+      <button class="btn ghost" id="btn-export">Export</button>
       <button class="btn ghost" id="btn-import">Import library file</button>
+      <p class="hint" style="margin-top:12px">Importing adds to what is already here. Photo lists merge, so nobody's additions are lost.</p>
       <input type="file" id="imp" accept=".json,application/json" hidden>
     </div>
     <div class="sect">
@@ -323,7 +350,18 @@ button{background:none;border:0;cursor:pointer}
   <button class="iconbtn" id="zclose" aria-label="Close">
     <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
   </button>
+  <button class="iconbtn" id="zcrop" aria-label="Crop this photo">
+    <svg viewBox="0 0 24 24"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg>
+  </button>
   <div id="zlabel"></div>
+  <div id="crop">
+    <span class="ch tl"></span><span class="ch tr"></span>
+    <span class="ch bl"></span><span class="ch br"></span>
+  </div>
+  <div id="cropbar">
+    <button class="btn ghost" id="cropno">Cancel</button>
+    <button class="btn" id="cropyes">Crop</button>
+  </div>
 </div>
 <div id="modal">
   <div class="sheet">
@@ -348,7 +386,7 @@ const ALLCLANS = () => [...BUILTIN, ...extra];
 const CLANS    = () => ALLCLANS().filter(c=>!hidden.includes(c));
 const CLASSES = ["Cubs","Subadults","Adult Females","Immigrant Males","Aliens"];
 const MAXPX = 1600, QUALITY = 0.82;
-const BUILD = "2026-07-19g";
+const BUILD = "2026-07-19l";
 
 /* ---------------- storage ---------------- */
 let db;
@@ -371,10 +409,40 @@ const putH = h=>req(tx("hyenas","readwrite").put(h));
 const delH = id=>req(tx("hyenas","readwrite").delete(id));
 const allH = ()=>req(tx("hyenas","readonly").getAll());
 const putP = (id,blob)=>req(tx("photos","readwrite").put({id,blob}));
+const putRec = rec=>req(tx("photos","readwrite").put(rec));
 const getP = id=>req(tx("photos","readonly").get(id));
 const delP = id=>req(tx("photos","readwrite").delete(id));
 const allP = ()=>req(tx("photos","readonly").getAll());
 const getM = k=>req(tx("meta","readonly").get(k));
+const photoSize = new Map();
+/* Build i briefly kept a pre-crop copy of each edited photo. Drop them. */
+function dropOrigs(){
+  return new Promise((res,rej)=>{
+    let n=0;
+    const st = tx("photos","readwrite");
+    const r = st.openCursor();
+    r.onsuccess = e=>{
+      const c = e.target.result;
+      if(!c){ if(n) console.log("reclaimed",n,"pre-crop copies"); return res(n); }
+      if(c.value && c.value.orig){ c.update({id:c.value.id, blob:c.value.blob}); n++; }
+      c.continue();
+    };
+    r.onerror = ()=>rej(r.error);
+  });
+}
+function scanPhotoSizes(){
+  return new Promise((res,rej)=>{
+    photoSize.clear();
+    const r = tx("photos","readonly").openCursor();
+    r.onsuccess = e=>{
+      const c = e.target.result;
+      if(!c) return res();
+      photoSize.set(c.value.id, (c.value.blob && c.value.blob.size) || 0);
+      c.continue();
+    };
+    r.onerror = ()=>rej(r.error);
+  });
+}
 const putM = (k,v)=>req(tx("meta","readwrite").put({k,v}));
 async function saveExtra(){ extra=[...new Set(extra)]; await putM("clans",extra); }
 async function saveHidden(){ hidden=[...new Set(hidden)]; await putM("hidden",hidden); }
@@ -408,7 +476,11 @@ function toast(msg){
   const t=$("#toast"); t.textContent=msg; t.classList.add("on");
   clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("on"),2200);
 }
-const busy = on=>$("#busy").classList.toggle("on",on);
+function busy(on,msg){
+  const b = $("#busy");
+  b.textContent = msg || "working…";
+  b.classList.toggle("on",on);
+}
 
 /* ---------------- image resize ---------------- */
 async function shrink(file){
@@ -562,7 +634,11 @@ function tapPane(target){
   if(!p) return;
   const img = p.querySelector("img");
   if(!img) return;
-  openZoom(img.src, p.classList.contains("top") ? "LEFT" : "RIGHT");
+  const h = cur.list[cur.i];
+  const top = p.classList.contains("top");
+  const ids = (top ? h.left : h.right) || [];
+  const id = ids.length ? ids[cur.a % ids.length] : null;
+  openZoom(img.src, top ? "LEFT" : "RIGHT", id);
 }
 function toggleCard(){
   cardOn=!cardOn;
@@ -585,16 +661,21 @@ function zClamp(){
   const ow=Math.max(0,(r.width -innerWidth )/2), oh=Math.max(0,(r.height-innerHeight)/2);
   zx=Math.max(-ow,Math.min(ow,zx)); zy=Math.max(-oh,Math.min(oh,zy));
 }
-function openZoom(src,side){
+function openZoom(src,side,pid){
   zimg.src=src; $("#zlabel").textContent=side;
+  cPhotoId = pid || null; cSide = side;
   zs=1; zx=0; zy=0; zApply();
   zoom.classList.add("on");
+  $("#zcrop").style.display = cPhotoId ? "" : "none";
 }
-function closeZoom(){ zoom.classList.remove("on"); zimg.src=""; }
+function closeZoom(){
+  if(cropOn) endCrop();
+  zoom.classList.remove("on"); zimg.src=""; cPhotoId=null;
+}
 $("#zclose").onclick = e=>{ e.stopPropagation(); closeZoom(); };
 
 zoom.addEventListener("touchstart",e=>{
-  if(e.target.closest("#zclose")) return;
+  if(cropOn || e.target.closest("#zclose")) return;
   if(e.touches.length===2){
     const [a,b]=e.touches;
     zDist=Math.hypot(b.clientX-a.clientX,b.clientY-a.clientY);
@@ -609,6 +690,7 @@ zoom.addEventListener("touchstart",e=>{
 },{passive:true});
 
 zoom.addEventListener("touchmove",e=>{
+  if(cropOn) return;
   if(e.touches.length===2){
     const [a,b]=e.touches;
     const d=Math.hypot(b.clientX-a.clientX,b.clientY-a.clientY);
@@ -625,6 +707,7 @@ zoom.addEventListener("touchend",e=>{
 },{passive:true});
 
 zoom.addEventListener("wheel",e=>{
+  if(cropOn) return;
   e.preventDefault();
   zs=Math.max(MINZ,Math.min(MAXZ, zs * (e.deltaY<0?1.12:0.89)));
   zClamp(); zApply();
@@ -632,7 +715,7 @@ zoom.addEventListener("wheel",e=>{
 
 let zdrag=false;
 zoom.addEventListener("mousedown",e=>{
-  if(e.target.closest("#zclose")) return;
+  if(cropOn || e.target.closest("#zclose")) return;
   zdrag=true; zpx=e.clientX-zx; zpy=e.clientY-zy;
 });
 addEventListener("mousemove",e=>{
@@ -641,13 +724,109 @@ addEventListener("mousemove",e=>{
 });
 addEventListener("mouseup",()=>zdrag=false);
 zoom.addEventListener("dblclick",e=>{
-  if(e.target.closest("#zclose")) return;
+  if(cropOn || e.target.closest("#zclose")) return;
   zs = zs>1.2 ? 1 : 2.5; zx=0; zy=0; zClamp(); zApply();
 });
 
+/* ---------------- crop ---------------- */
+let cropWarned=false, cropOn=false, cRect=null, cImg=null, cDrag=null, cPhotoId=null, cSide=null;
+const cropBox=$("#crop"), cropBar=$("#cropbar");
+
+function imgBox(){
+  const r = zimg.getBoundingClientRect();
+  return {x:r.left, y:r.top, w:r.width, h:r.height};
+}
+function drawCrop(){
+  cropBox.style.left = cRect.x+"px"; cropBox.style.top = cRect.y+"px";
+  cropBox.style.width = cRect.w+"px"; cropBox.style.height = cRect.h+"px";
+}
+function startCrop(){
+  zs=1; zx=0; zy=0; zApply();
+  requestAnimationFrame(()=>{
+    cImg = imgBox();
+    if(!cImg.w){ toast("Photo still loading"); return; }
+    cRect = {x:cImg.x+cImg.w*0.08, y:cImg.y+cImg.h*0.08,
+             w:cImg.w*0.84, h:cImg.h*0.84};
+    if(!cropWarned){
+      cropWarned = true;
+      toast("Cropping replaces the photo for good");
+    }
+    cropOn = true;
+    cropBox.classList.add("on"); cropBar.classList.add("on");
+    $("#zcrop").style.display="none";
+    drawCrop();
+  });
+}
+function endCrop(){
+  cropOn=false; cDrag=null;
+  cropBox.classList.remove("on"); cropBar.classList.remove("on");
+  $("#zcrop").style.display="";
+}
+$("#zcrop").onclick = e=>{ e.stopPropagation(); startCrop(); };
+$("#cropno").onclick = e=>{ e.stopPropagation(); endCrop(); };
+
+cropBox.addEventListener("pointerdown",e=>{
+  e.preventDefault(); e.stopPropagation();
+  const h = e.target.classList.contains("ch") ? [...e.target.classList].find(c=>/^(tl|tr|bl|br)$/.test(c)) : "move";
+  cDrag = {h, px:e.clientX, py:e.clientY, r:{...cRect}};
+  cropBox.setPointerCapture(e.pointerId);
+});
+cropBox.addEventListener("pointermove",e=>{
+  if(!cDrag) return;
+  e.preventDefault();
+  const dx=e.clientX-cDrag.px, dy=e.clientY-cDrag.py, r={...cDrag.r};
+  const MIN=48;
+  if(cDrag.h==="move"){ r.x+=dx; r.y+=dy; }
+  else{
+    if(cDrag.h[0]==="t"){ r.y+=dy; r.h-=dy; } else { r.h+=dy; }
+    if(cDrag.h[1]==="l"){ r.x+=dx; r.w-=dx; } else { r.w+=dx; }
+  }
+  if(r.w<MIN){ if(cDrag.h[1]==="l") r.x=cDrag.r.x+cDrag.r.w-MIN; r.w=MIN; }
+  if(r.h<MIN){ if(cDrag.h[0]==="t") r.y=cDrag.r.y+cDrag.r.h-MIN; r.h=MIN; }
+  // stay inside the photo
+  r.x=Math.max(cImg.x,Math.min(r.x,cImg.x+cImg.w-r.w));
+  r.y=Math.max(cImg.y,Math.min(r.y,cImg.y+cImg.h-r.h));
+  r.w=Math.min(r.w,cImg.x+cImg.w-r.x);
+  r.h=Math.min(r.h,cImg.y+cImg.h-r.y);
+  cRect=r; drawCrop();
+});
+cropBox.addEventListener("pointerup",()=>{ cDrag=null; });
+cropBox.addEventListener("pointercancel",()=>{ cDrag=null; });
+
+$("#cropyes").onclick = async e=>{
+  e.stopPropagation();
+  if(!cropOn || !cPhotoId) return;
+  busy(true,"cropping…");
+  try{
+    const rec = await getP(cPhotoId);
+    if(!rec) throw new Error("photo missing");
+    const bmp = await createImageBitmap(rec.blob);
+    const sx = (cRect.x-cImg.x)/cImg.w * bmp.width;
+    const sy = (cRect.y-cImg.y)/cImg.h * bmp.height;
+    const sw = cRect.w/cImg.w * bmp.width;
+    const sh = cRect.h/cImg.h * bmp.height;
+    const c = document.createElement("canvas");
+    c.width = Math.max(1,Math.round(sw)); c.height = Math.max(1,Math.round(sh));
+    c.getContext("2d",{alpha:false}).drawImage(bmp, sx,sy,sw,sh, 0,0,c.width,c.height);
+    bmp.close && bmp.close();
+    let blob = await new Promise(r=>c.toBlob(r,"image/webp",QUALITY));
+    if(!blob) blob = await new Promise(r=>c.toBlob(r,"image/jpeg",0.85));
+    await putP(cPhotoId, blob);
+    const old = urls.get(cPhotoId);
+    if(old) URL.revokeObjectURL(old);
+    const u = URL.createObjectURL(blob);
+    urls.set(cPhotoId,u);
+    zimg.src = u;
+    photoSize.set(cPhotoId, blob.size);
+    endCrop(); paint();
+    toast("Cropped");
+  }catch(err){ toast("Could not crop that photo"); console.error(err); }
+  busy(false);
+};
+
 addEventListener("keydown",e=>{
   if(zoom.classList.contains("on")){
-    if(e.key==="Escape"){ e.stopPropagation(); closeZoom(); }
+    if(e.key==="Escape"){ e.stopPropagation(); cropOn ? endCrop() : closeZoom(); }
     return;
   }
   if(!$("#s-browse").classList.contains("on")) return;
@@ -858,35 +1037,92 @@ $("#m-ok").onclick = async ()=>{
 };
 
 $("#btn-settings").onclick = async ()=>{
-  const ps = await allP();
-  const bytes = ps.reduce((s,p)=>s+(p.blob.size||0),0);
+  busy(true,"reading library…");
+  await scanPhotoSizes();
+  busy(false);
+  let bytes = 0; photoSize.forEach(v=>bytes+=v);
   const mb = (bytes/1048576).toFixed(1);
+  const np = photoSize.size;
   const lines = CLANS().map(c=>{
     const n = hyenas.filter(h=>h.clan===c).length;
     return `${c.padEnd(12," ")} ${String(n).padStart(3," ")}`;
   });
   $("#stats").innerHTML = lines.join("<br>") +
-    `<br><br>${hyenas.length} hyenas · ${ps.length} photos · ${mb} MB` +
+    `<br><br>${hyenas.length} hyenas · ${np} photos · ${mb} MB` +
     `<br><span style="color:var(--sharpie)">build ${BUILD}</span>`;
   renderClanMgr();
+  fillExport();
   show("settings");
 };
 
+function fillExport(){
+  const c = $("#x-clan"), k = $("#x-class");
+  const keepC = c.value, keepK = k.value;
+  c.innerHTML = ALLCLANS().map(x=>`<option>${esc(x)}</option>`).join("");
+  k.innerHTML = `<option value="">All classes</option>` +
+                CLASSES.map(x=>`<option>${esc(x)}</option>`).join("");
+  if(keepC && ALLCLANS().includes(keepC)) c.value = keepC;
+  if(keepK) k.value = keepK;
+  sizeExport();
+}
+
+function exportSel(){
+  const cl = $("#x-clan").value, kl = $("#x-class").value;
+  return hyenas.filter(h=>h.clan===cl && (!kl || h.cls===kl));
+}
+
+function sizeExport(){
+  const sel = exportSel();
+  let bytes = 0, n = 0;
+  sel.forEach(h=>[...(h.left||[]),...(h.right||[])].forEach(id=>{
+    bytes += photoSize.get(id)||0; n++;
+  }));
+  const mb = (bytes*1.37/1048576);   // base64 overhead
+  $("#x-size").textContent =
+    `${sel.length} hyenas · ${n} photos · file about ${mb<1?"<1":mb.toFixed(0)} MB` +
+    (mb>400 ? "  — too big, pick one class" : "");
+}
+$("#x-clan").onchange = sizeExport;
+$("#x-class").onchange = sizeExport;
+
 $("#btn-export").onclick = async ()=>{
-  busy(true);
+  const sel = exportSel();
+  if(!sel.length){ toast("Nothing in that folder"); return; }
+  const cl = $("#x-clan").value, kl = $("#x-class").value;
+  busy(true, "preparing…");
   try{
-    const ps = await allP();
-    const photos = {};
-    for(const p of ps) photos[p.id] = await blob2b64(p.blob);
-    const payload = {format:"hyena-id-1", exported:new Date().toISOString(), clans:extra, hidden, hyenas, photos};
-    const b = new Blob([JSON.stringify(payload)],{type:"application/json"});
+    const parts = [
+      '{"format":"hyena-id-1","exported":' + JSON.stringify(new Date().toISOString()) +
+      ',"clans":' + JSON.stringify(extra) +
+      ',"hidden":' + JSON.stringify(hidden) +
+      ',"hyenas":' + JSON.stringify(sel) +
+      ',"photos":{'
+    ];
+    let first = true, done = 0;
+    const total = sel.reduce((s,h)=>s+(h.left||[]).length+(h.right||[]).length,0);
+    for(const h of sel){
+      for(const id of [...(h.left||[]),...(h.right||[])]){
+        const rec = await getP(id);
+        if(!rec) continue;
+        const b64 = await blob2b64(rec.blob);
+        parts.push((first?"":",") + JSON.stringify(id) + ":" + JSON.stringify(b64));
+        first = false;
+        if(++done % 10 === 0) busy(true, `${done} of ${total} photos…`);
+      }
+    }
+    parts.push("}}");
+    const b = new Blob(parts,{type:"application/json"});
     const a = document.createElement("a");
     a.href = URL.createObjectURL(b);
-    a.download = "hyena-id-" + new Date().toISOString().slice(0,10) + ".json";
+    const slug = (cl + (kl ? "-" + kl : "")).toLowerCase().replace(/[^a-z0-9]+/g,"-");
+    a.download = slug + "-" + new Date().toISOString().slice(0,10) + ".json";
     a.click();
-    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
-    toast("Exported");
-  }catch(e){ toast("Export failed"); console.error(e); }
+    setTimeout(()=>URL.revokeObjectURL(a.href),8000);
+    toast(`Exported ${sel.length} hyenas`);
+  }catch(e){
+    toast("Export failed — try one class at a time");
+    console.error(e);
+  }
   busy(false);
 };
 
@@ -975,6 +1211,7 @@ function b642blob(d){
     hidden = (mh && mh.v) || [];
     hyenas = await allH();
     fillSelects();
+    dropOrigs().catch(()=>{});
   }catch(e){
     toast("This browser blocked local storage");
     console.error(e);
