@@ -18,6 +18,8 @@
  *   GET  /api/stat           -> {hyenas, photos, bytes}
  */
 
+const VERSION = "2026-07-19x";
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET,PUT,POST,OPTIONS",
@@ -91,7 +93,15 @@ export default {
     const url = new URL(req.url);
     const path = url.pathname.replace(/\/+$/, "");
 
-    if (path === "/api/ping") return json({ ok: true });
+    // no password needed: lets you confirm which code is deployed
+    if (path === "/api/ping") {
+      return json({
+        ok: true,
+        version: VERSION,
+        endpoints: ["/api/index", "/api/push", "/api/photos", "/api/have",
+                    "/api/photo/<id>", "/api/gc", "/api/stat"],
+      });
+    }
 
     if (!authed(req, env)) return json({ error: "bad password" }, 401);
 

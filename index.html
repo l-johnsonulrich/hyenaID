@@ -436,7 +436,7 @@ const MAXPX = 1600, QUALITY = 0.82;
    The password is deliberately NOT here — it is the only thing keeping
    strangers out, and this file is public. */
 const DEFAULT_SYNC_URL = "https://hyena-sync.marahyenaproject.workers.dev";
-const BUILD = "2026-07-19w";
+const BUILD = "2026-07-19x";
 
 /* ---------------- storage ---------------- */
 let db;
@@ -1145,6 +1145,8 @@ async function api(method, path, body, raw, ms){
   }
   clearTimeout(timer);
   if(r.status === 401) throw new Error("Password rejected");
+  if(r.status === 404 && !path.startsWith("/api/photo/"))
+    throw new Error("The sync server is out of date — redeploy the Worker");
   if(!r.ok && r.status !== 404) throw new Error("Server said " + r.status);
   return r;
 }
@@ -1182,7 +1184,11 @@ $("#btn-sync").onclick = async ()=>{
 
     // one request tells us everything the server already holds
     busy(true,"checking photos…");
-    const onServer = new Set(((await (await api("GET","/api/photos")).json()).ids)||[]);
+    const listed = await (await api("GET","/api/photos")).json();
+    if(!Array.isArray(listed.ids))
+      throw new Error("The sync server is out of date — redeploy the Worker");
+    const onServer = new Set(listed.ids);
+    console.log("server holds", onServer.size, "photos");
 
     if(mine.length){
       const ids = [...new Set(mine.flatMap(r=>[...(r.left||[]),...(r.right||[])]))];
