@@ -204,7 +204,7 @@ button{background:none;border:0;cursor:pointer}
   text-align:center}
 #toast.on{opacity:1}
 #busy{position:fixed;inset:0;background:rgba(10,9,7,.82);display:none;place-items:center;
-  z-index:98;font-size:14px;color:var(--paper-dim);letter-spacing:.06em}
+  z-index:95;font-size:14px;color:var(--paper-dim);letter-spacing:.06em}
 #busy.on{display:grid}
 </style>
 </head>
@@ -394,7 +394,7 @@ const ALLCLANS = () => [...BUILTIN, ...extra];
 const CLANS    = () => ALLCLANS().filter(c=>!hidden.includes(c));
 const CLASSES = ["Cubs","Subadults","Adult Females","Immigrant Males","Aliens"];
 const MAXPX = 1600, QUALITY = 0.82;
-const BUILD = "2026-07-19m";
+const BUILD = "2026-07-19n";
 
 /* ---------------- storage ---------------- */
 let db;
@@ -1086,9 +1086,12 @@ function sizeExport(){
     bytes += photoSize.get(id)||0; n++;
   }));
   const mb = (bytes*1.37/1048576);   // base64 overhead
+  const phone = /iPhone|iPad|Android/i.test(navigator.userAgent);
+  let warn = "";
+  if(mb > 400) warn = "  — too big, pick one class";
+  else if(phone && mb > 120) warn = "  — large for a phone, pick one class if it fails";
   $("#x-size").textContent =
-    `${sel.length} hyenas · ${n} photos · file about ${mb<1?"<1":mb.toFixed(0)} MB` +
-    (mb>400 ? "  — too big, pick one class" : "");
+    `${sel.length} hyenas · ${n} photos · file about ${mb<1?"<1":mb.toFixed(0)} MB` + warn;
 }
 $("#x-clan").onchange = sizeExport;
 $("#x-class").onchange = sizeExport;
@@ -1120,19 +1123,46 @@ $("#btn-export").onclick = async ()=>{
     }
     parts.push("}}");
     const b = new Blob(parts,{type:"application/json"});
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(b);
     const slug = (cl + (kl ? "-" + kl : "")).toLowerCase().replace(/[^a-z0-9]+/g,"-");
-    a.download = slug + "-" + new Date().toISOString().slice(0,10) + ".json";
-    a.click();
-    setTimeout(()=>URL.revokeObjectURL(a.href),8000);
-    toast(`Exported ${sel.length} hyenas`);
+    const fname = slug + "-" + new Date().toISOString().slice(0,10) + ".json";
+    busy(false);
+    await deliver(b, fname, sel.length);
   }catch(e){
     toast("Export failed — try one class at a time");
     console.error(e);
   }
   busy(false);
 };
+
+/* iOS Safari ignores <a download>, which is why exporting there flashed white
+   and saved nothing. Hand the file to the system share sheet instead, and keep
+   the anchor as the fallback for laptops. */
+async function deliver(blob, fname, n){
+  try{
+    const file = new File([blob], fname, {type:"application/json"});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title:fname});
+      toast(`Shared ${n} hyenas`);
+      return;
+    }
+  }catch(e){
+    if(e && e.name === "AbortError"){ toast("Export cancelled"); return; }
+    console.error("share failed", e);
+  }
+  try{
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = fname;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),10000);
+    toast(`Exported ${n} hyenas`);
+  }catch(e){
+    toast("This browser will not save the file — try a laptop");
+    console.error(e);
+  }
+}
 
 $("#btn-import").onclick = ()=>{ $("#imp").value=""; $("#imp").click(); };
 $("#imp").onchange = async e=>{
