@@ -73,10 +73,18 @@ button{background:none;border:0;cursor:pointer}
 .pane.top{top:0}
 .pane.bot{top:50%;border-top:1px solid rgba(255,255,255,.14)}
 .pane img{width:100%;height:100%;object-fit:contain;display:block}
-.pane .side{position:absolute;top:8px;left:10px;font-size:10px;letter-spacing:.18em;
+/* push each photo toward the centre line so the empty space goes to the
+   outer edges, where the top bar and the text card already are */
+.pane.top img{object-position:center bottom}
+.pane.bot img{object-position:center top}
+.pane .side{position:absolute;left:10px;font-size:10px;letter-spacing:.18em;
   color:rgba(255,255,255,.55);text-shadow:0 1px 3px #000;pointer-events:none}
-.pane .none{position:absolute;inset:0;display:grid;place-items:center;
+.pane.top .side{bottom:7px}   /* just above the divider */
+.pane.bot .side{top:7px}      /* just below it */
+.pane .none{position:absolute;inset:0;display:grid;justify-items:center;
   color:#5a5348;font-size:13px;letter-spacing:.08em}
+.pane.top .none{align-items:end;padding-bottom:26px}
+.pane.bot .none{align-items:start;padding-top:26px}
 
 /* the field card: signature element */
 #card{position:absolute;left:0;right:0;bottom:0;padding:14px var(--pad) calc(var(--safe-b) + 14px);
@@ -386,7 +394,7 @@ const ALLCLANS = () => [...BUILTIN, ...extra];
 const CLANS    = () => ALLCLANS().filter(c=>!hidden.includes(c));
 const CLASSES = ["Cubs","Subadults","Adult Females","Immigrant Males","Aliens"];
 const MAXPX = 1600, QUALITY = 0.82;
-const BUILD = "2026-07-19l";
+const BUILD = "2026-07-19m";
 
 /* ---------------- storage ---------------- */
 let db;
